@@ -1,0 +1,11 @@
+id = "rle_encode"
+version = "1.0.0"
+title = "Run-length encoding"
+entry_point = "rle_encode"
+signature = "def rle_encode(s: str) -> str:"
+timeout_s = 10
+description = """
+Compress a string by replacing each maximal run of a repeated character with the character
+followed by the run length. Omit the count when the run length is 1.
+Examples: "aaabcc" -> "a3bc2", "abc" -> "abc", "" -> "".
+"""

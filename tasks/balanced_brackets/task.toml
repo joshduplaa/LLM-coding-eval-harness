@@ -1,0 +1,11 @@
+id = "balanced_brackets"
+version = "1.0.0"
+title = "Balanced brackets"
+entry_point = "is_balanced"
+signature = "def is_balanced(text: str) -> bool:"
+timeout_s = 10
+description = """
+Return True if every bracket in the text is properly matched and nested, considering only the
+three bracket pairs (), [] and {}. Ignore every other character. The empty string is balanced.
+Examples: "a(b[c]{d})" -> True, "([)]" -> False, "(()" -> False.
+"""
