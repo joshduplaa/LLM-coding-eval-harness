@@ -1,0 +1,40 @@
+[project]
+name = "evalharness"
+version = "0.1.0"
+description = "Run model-generated code against test suites in a locked-down sandbox and record reproducible results."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+evalharness = "evalharness.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8.3", "ruff>=0.8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/evalharness"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["docker: needs a working Docker daemon and the sandbox image"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# Task files are test fixtures/reference code, linted lightly; sandbox wrapper is linted normally.
+extend-exclude = ["tasks/*/tests", "tests/adversarial"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S"]
+ignore = ["S603", "S607"]  # we call the docker CLI via subprocess on purpose, with list args
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S108"]
+"tasks/**" = ["S101"]
+"sandbox/**" = ["S101", "S108"]
