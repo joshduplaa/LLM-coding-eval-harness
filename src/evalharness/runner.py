@@ -19,7 +19,13 @@ from . import __version__
 from .errors import TaskValidationError
 from .models import GenerationParams, Model
 from .prompts import PROMPT_TEMPLATE_VERSION, build_prompt, extract_code
-from .sandbox import DEFAULT_IMAGE, SandboxLimits, SandboxOutcome, run_in_sandbox
+from .sandbox import (
+    DEFAULT_IMAGE,
+    DEFAULT_RUNTIME,
+    SandboxLimits,
+    SandboxOutcome,
+    run_in_sandbox,
+)
 from .scoring import Category, Verdict, classify
 from .tasks import Task
 
@@ -73,6 +79,8 @@ def _outcome_summary(o: SandboxOutcome) -> dict:
     return {
         "image": o.image,
         "image_id": o.image_id,
+        "runtime": o.runtime,
+        "runtime_used": o.runtime_used,
         "limits": o.limits,
         "docker_returncode": o.docker_returncode,
         "test_returncode": env.get("returncode"),
@@ -104,7 +112,7 @@ class ValidationResult:
 
 
 def validate_task(
-    task: Task, limits: SandboxLimits, image: str = DEFAULT_IMAGE
+    task: Task, limits: SandboxLimits, image: str = DEFAULT_IMAGE, runtime: str = DEFAULT_RUNTIME
 ) -> ValidationResult:
     """The reference solution must pass, and every incorrect solution must fail on the merits.
 
@@ -113,13 +121,13 @@ def validate_task(
     """
     lim = task_limits(task, limits)
     checks = []
-    ref_v = classify(run_in_sandbox(task_files(task, task.reference_solution), lim, image))
+    ref_v = classify(run_in_sandbox(task_files(task, task.reference_solution), lim, image, runtime))
     ref_ok = ref_v.category == Category.PASSED
     checks.append({"solution": "reference", "expect": "passed", **ref_v.to_dict(), "ok": ref_ok})
     expected = ref_v.tests_total
     all_ok = ref_ok
     for name, code in task.incorrect_solutions.items():
-        v = classify(run_in_sandbox(task_files(task, code), lim, image), expected)
+        v = classify(run_in_sandbox(task_files(task, code), lim, image, runtime), expected)
         ok = v.category in (Category.WRONG_ANSWER, Category.RUNTIME_ERROR)
         checks.append({"solution": name, "expect": "fail", **v.to_dict(), "ok": ok})
         all_ok = all_ok and ok
@@ -134,6 +142,7 @@ def evaluate(
     limits: SandboxLimits | None = None,
     image: str = DEFAULT_IMAGE,
     on_sample=None,
+    runtime: str = DEFAULT_RUNTIME,
 ) -> dict:
     """Run a full evaluation and return the run document (a JSON-serializable dict)."""
     limits = limits or SandboxLimits()
@@ -146,12 +155,13 @@ def evaluate(
         else None,
         "harness": harness_info(),
         "model": {"id": model.model_id, "is_mock": model.is_mock, "params": params.to_dict()},
+        "sandbox_runtime": runtime,
         "samples_per_task": samples,
         "validations": [],
         "samples": [],
     }
     for task in tasks:
-        val = validate_task(task, limits, image)
+        val = validate_task(task, limits, image, runtime)
         run["validations"].append(val.to_dict())
         if not val.ok:
             raise TaskValidationError(
@@ -162,7 +172,7 @@ def evaluate(
         for i in range(samples):
             completion = model.generate(prompt, params)
             code = extract_code(completion.text)
-            outcome = run_in_sandbox(task_files(task, code), lim, image)
+            outcome = run_in_sandbox(task_files(task, code), lim, image, runtime)
             verdict: Verdict = classify(outcome, val.expected_tests)
             record = {
                 "task": {"id": task.id, "version": task.version, "content_hash": task.content_hash},

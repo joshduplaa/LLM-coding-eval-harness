@@ -3,18 +3,24 @@ import os
 import pytest
 
 from evalharness.errors import HarnessError
-from evalharness.sandbox import DEFAULT_IMAGE, image_id
+from evalharness.sandbox import DEFAULT_IMAGE, DEFAULT_RUNTIME, available_runtimes, image_id
 
 
 def _sandbox_ready() -> str | None:
     try:
         image_id(DEFAULT_IMAGE)
+        if DEFAULT_RUNTIME not in available_runtimes():
+            return f"Docker has no {DEFAULT_RUNTIME!r} runtime registered"
         return None
     except HarnessError as e:
         return str(e)
 
 
 _REASON = _sandbox_ready()
+
+
+def pytest_report_header(config):
+    return f"evalharness sandbox runtime: {DEFAULT_RUNTIME}"
 
 
 def pytest_collection_modifyitems(config, items):

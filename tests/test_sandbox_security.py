@@ -10,7 +10,13 @@ from pathlib import Path
 
 import pytest
 
-from evalharness.sandbox import SANDBOX_UID, SandboxLimits, docker_run_args, run_in_sandbox
+from evalharness.sandbox import (
+    DEFAULT_RUNTIME,
+    SANDBOX_UID,
+    SandboxLimits,
+    docker_run_args,
+    run_in_sandbox,
+)
 from evalharness.scoring import Category, classify
 
 TEST_FILE = "from solution import f\n\n\ndef test_f():\n    assert f() == 42\n"
@@ -38,10 +44,16 @@ def test_docker_run_args_include_every_hardening_flag():
         "--memory-swap 256m",
         "--pids-limit 64",
         "--ipc none",
+        f"--runtime {DEFAULT_RUNTIME}",
     ]:
         assert flag in joined, flag
     assert "noexec" in joined and "size=32m" in joined
     assert not any(a in ("-v", "--volume", "--mount", "--privileged", "-e", "--env") for a in args)
+
+
+def test_runtime_flag_is_configurable():
+    args = docker_run_args("n", "img", SandboxLimits(), runtime="runsc")
+    assert args[args.index("--runtime") + 1] == "runsc"
 
 
 # ---- docker: baseline ----
@@ -51,8 +63,9 @@ pytestmark_docker = pytest.mark.docker
 
 @pytest.mark.docker
 def test_correct_solution_passes():
-    v, _ = run("def f():\n    return 42\n")
+    v, o = run("def f():\n    return 42\n")
     assert v.category == Category.PASSED
+    assert o.runtime_used == DEFAULT_RUNTIME  # Docker really used the runtime we asked for
 
 
 @pytest.mark.docker
@@ -189,6 +202,14 @@ def test_ordinary_failures(solution, expected):
 def test_missing_image_is_harness_error():
     o = run_in_sandbox({"solution.py": "", "test_solution.py": TEST_FILE}, LIMITS, "no-such:img")
     assert classify(o).category == Category.HARNESS_ERROR
+
+
+@pytest.mark.docker
+def test_unknown_runtime_is_harness_error():
+    files = {"solution.py": "def f():\n    return 42\n", "test_solution.py": TEST_FILE}
+    o = run_in_sandbox(files, LIMITS, runtime="no-such-runtime")
+    v = classify(o)
+    assert v.category == Category.HARNESS_ERROR, v
 
 
 @pytest.mark.docker

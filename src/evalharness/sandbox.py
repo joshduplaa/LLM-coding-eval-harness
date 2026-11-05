@@ -13,6 +13,12 @@ Each isolation property comes from a specific `docker run` flag (see `docker_run
     output size              the host stops reading after MAX_OUTPUT bytes and kills the container
 
 Docker's default seccomp and AppArmor profiles stay on; we never pass --privileged.
+
+The OCI runtime is chosen with `--runtime` (see D13). The default, `runc`, runs the container
+directly on the host kernel. `runsc` (gVisor) puts a user-space kernel between the untrusted code
+and the host kernel, so a kernel bug reachable from a syscall is much harder to exploit. Set
+EVALHARNESS_SANDBOX_RUNTIME=runsc (or pass --runtime) to use it. Each outcome records the runtime
+Docker actually used, read back from `docker inspect`.
 """
 
 from __future__ import annotations
@@ -29,6 +35,7 @@ from dataclasses import asdict, dataclass, field
 from .errors import HarnessError
 
 DEFAULT_IMAGE = os.environ.get("EVALHARNESS_SANDBOX_IMAGE", "evalharness-sandbox:0.1.0")
+DEFAULT_RUNTIME = os.environ.get("EVALHARNESS_SANDBOX_RUNTIME", "runc")
 MAX_OUTPUT = 1024 * 1024
 STARTUP_GRACE_S = 15.0
 SANDBOX_UID = "10001:10001"
@@ -54,6 +61,8 @@ class SandboxOutcome:
 
     image: str
     image_id: str | None = None
+    runtime: str | None = None  # requested OCI runtime (runc or runsc)
+    runtime_used: str | None = None  # what Docker reports it actually used
     docker_returncode: int | None = None
     host_timed_out: bool = False
     output_exceeded: bool = False
@@ -69,10 +78,13 @@ class SandboxOutcome:
         return asdict(self)
 
 
-def docker_run_args(name: str, image: str, limits: SandboxLimits) -> list[str]:
+def docker_run_args(
+    name: str, image: str, limits: SandboxLimits, runtime: str = DEFAULT_RUNTIME
+) -> list[str]:
     tmp_opts = "rw,noexec,nosuid,nodev"
     flags: list[tuple[str, str | None]] = [
         ("--interactive", None),  # files arrive on stdin
+        ("--runtime", runtime),  # always explicit, so a changed daemon default can't surprise us
         ("--name", name),
         ("--label", "evalharness=sandbox"),
         ("--network", "none"),
@@ -117,6 +129,17 @@ def image_id(image: str) -> str:
             f"sandbox image {image!r} not found. Build it with `make sandbox-image`. ({msg})"
         )
     return r.stdout.strip()
+
+
+def available_runtimes() -> set[str]:
+    """Names of the OCI runtimes the Docker daemon has registered (e.g. {"runc", "runsc"})."""
+    try:
+        r = _docker("info", "--format", "{{json .Runtimes}}")
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        raise HarnessError("cannot query the Docker daemon for runtimes") from e
+    if r.returncode != 0:
+        raise HarnessError(f"cannot reach the Docker daemon: {r.stderr.strip()}")
+    return set(json.loads(r.stdout or "{}"))
 
 
 def _bounded_communicate(
@@ -182,10 +205,11 @@ def run_in_sandbox(
     files: dict[str, str],
     limits: SandboxLimits | None = None,
     image: str = DEFAULT_IMAGE,
+    runtime: str = DEFAULT_RUNTIME,
 ) -> SandboxOutcome:
     """Run pytest over `files` (which must include solution.py) in a fresh container."""
     limits = limits or SandboxLimits()
-    out = SandboxOutcome(image=image, limits=limits.to_dict())
+    out = SandboxOutcome(image=image, runtime=runtime, limits=limits.to_dict())
     try:
         out.image_id = image_id(image)
     except HarnessError as e:
@@ -197,7 +221,7 @@ def run_in_sandbox(
     payload = json.dumps({"files": files, "timeout_s": limits.timeout_s, "nonce": nonce}).encode()
     start = time.monotonic()
     proc = subprocess.Popen(
-        docker_run_args(name, image, limits),
+        docker_run_args(name, image, limits, runtime),
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -228,10 +252,12 @@ def run_in_sandbox(
         out.output_exceeded = exceeded
         out.stderr_tail = stderr.decode("utf-8", "replace")[-4000:]
 
-        state = _docker("inspect", "--format", "{{json .State}}", name)
+        fmt = '{"State": {{json .State}}, "Runtime": {{json .HostConfig.Runtime}}}'
+        state = _docker("inspect", "--format", fmt, name)
         if state.returncode == 0:
-            st = json.loads(state.stdout)
-            out.oom_killed = bool(st.get("OOMKilled"))
+            info = json.loads(state.stdout)
+            out.oom_killed = bool(info["State"].get("OOMKilled"))
+            out.runtime_used = info.get("Runtime")
         elif not (timed_out or exceeded):
             out.harness_error = f"container did not start: {out.stderr_tail.strip()[-500:]}"
             return out

@@ -1,7 +1,7 @@
 # Convenience targets. Docker commands use your active context (`docker context show`).
 SANDBOX_IMAGE ?= evalharness-sandbox:0.1.0
 
-.PHONY: install sandbox-image lint format test test-unit validate demo
+.PHONY: install sandbox-image lint format test test-unit test-gvisor validate demo
 
 install:            ## create .venv and install the package + dev tools
 	uv sync
@@ -22,6 +22,9 @@ test-unit:          ## fast tests, no Docker
 
 test:               ## everything, including adversarial sandbox tests (needs the image)
 	uv run pytest -q
+
+test-gvisor:        ## the same suite with every sandbox under gVisor (runsc must be registered)
+	EVALHARNESS_SANDBOX_RUNTIME=runsc uv run pytest -q
 
 validate:           ## check every task's tests accept the reference and reject incorrect ones
 	uv run evalharness validate
