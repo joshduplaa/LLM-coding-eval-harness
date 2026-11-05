@@ -41,6 +41,16 @@ STARTUP_GRACE_S = 15.0
 SANDBOX_UID = "10001:10001"
 ENVELOPE_PREFIX = "===EVALHARNESS-ENVELOPE-BEGIN"
 
+# Under gVisor, --pids-limit caps the host threads of gVisor's own user-space kernel (the
+# Sentry), not the processes inside the sandbox. Measured: a fork bomb crashes the Sentry with
+# no output below ~56, so we enforce a floor with 4x headroom. Inside gVisor, a fork bomb is
+# then stopped by the memory limit instead (see D13).
+RUNSC_MIN_PIDS = 256
+
+
+def effective_pids_limit(limits: SandboxLimits, runtime: str) -> int:
+    return max(limits.pids, RUNSC_MIN_PIDS) if runtime == "runsc" else limits.pids
+
 
 @dataclass(frozen=True)
 class SandboxLimits:
@@ -63,6 +73,7 @@ class SandboxOutcome:
     image_id: str | None = None
     runtime: str | None = None  # requested OCI runtime (runc or runsc)
     runtime_used: str | None = None  # what Docker reports it actually used
+    pids_limit_applied: int | None = None  # differs from limits["pids"] under runsc
     docker_returncode: int | None = None
     host_timed_out: bool = False
     output_exceeded: bool = False
@@ -99,7 +110,7 @@ def docker_run_args(
         ("--memory", f"{limits.memory_mb}m"),
         ("--memory-swap", f"{limits.memory_mb}m"),  # equal to --memory means no swap
         ("--cpus", str(limits.cpus)),
-        ("--pids-limit", str(limits.pids)),
+        ("--pids-limit", str(effective_pids_limit(limits, runtime))),
         ("--ulimit", f"nofile={limits.nofile}:{limits.nofile}"),
         ("--hostname", "sandbox"),
     ]
@@ -209,7 +220,12 @@ def run_in_sandbox(
 ) -> SandboxOutcome:
     """Run pytest over `files` (which must include solution.py) in a fresh container."""
     limits = limits or SandboxLimits()
-    out = SandboxOutcome(image=image, runtime=runtime, limits=limits.to_dict())
+    out = SandboxOutcome(
+        image=image,
+        runtime=runtime,
+        limits=limits.to_dict(),
+        pids_limit_applied=effective_pids_limit(limits, runtime),
+    )
     try:
         out.image_id = image_id(image)
     except HarnessError as e:

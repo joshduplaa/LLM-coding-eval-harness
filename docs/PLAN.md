@@ -14,7 +14,9 @@ a teaching checkpoint after each.
 - Missing: `kind`, `kubectl`, `helm`, `terraform`, `ruff`. Ruff is a repo-local dev dependency.
   The rest will be installed as user-local binaries in `~/.local/bin` (already on PATH, no sudo)
   when Milestones 4 and 5 need them.
-- No passwordless sudo, so anything needing root (e.g. installing gVisor) needs Joshua to run it.
+- No passwordless sudo. Root steps run through `sudo -A` with a graphical password prompt
+  (zenity), so Joshua types the password. gVisor (`runsc` release-20261102.0) was installed
+  that way on 2026-11-04 and is available as an opt-in runtime (D13).
 
 ## Architecture (Milestone 1)
 

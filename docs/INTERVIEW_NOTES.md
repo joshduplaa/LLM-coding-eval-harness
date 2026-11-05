@@ -55,6 +55,19 @@ the raw facts those unit tests assume.
 It looks tasks up by exact prompt text, so its interface is exactly what a real API adapter
 will have. It's also always labeled: model id `mock/...`, `is_mock: true`, a banner in the CLI.
 
-### 9. Numbers worth knowing
+### 9. Adding gVisor, and the limit that meant something different
+Containers share the host kernel, so I added gVisor as an opt-in runtime: one `--runtime runsc`
+flag, recorded on every result. Running the same 71 tests under both runtimes found two
+differences. (1) `Seccomp: 0` in `/proc/self/status`, because gVisor applies the profile internally.
+The probe now checks that the sandbox sees a different kernel instead. (2) The fork bomb came back
+with no output at all. Under gVisor, `--pids-limit` caps the host threads of gVisor's own kernel,
+so the bomb starved gVisor until it crashed. I measured the threshold (crash at 48, fine at 56),
+set a floor of 256 under runsc, and let the memory limit stop fork bombs there instead.
+**Lessons:** the same flag can mean something different under a different runtime, so the tests
+have to run under each runtime you claim to support. Also, the classifier failed *safe*: an
+unexplained missing result was called a violation, never a pass.
+
+### 10. Numbers worth knowing
 Container start plus pytest run: ~0.6 s per sample. Validation: ~1.5 s per task. A timeout sample
 costs the full timeout (10 s by default). That's why timeouts dominate wall time in `mock-mixed` runs.
+gVisor: about 1.36 s vs 0.87 s per container, about 0.5 s of overhead per sample.

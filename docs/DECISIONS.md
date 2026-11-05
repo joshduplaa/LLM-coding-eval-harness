@@ -111,3 +111,29 @@ Joshua allowed work outside the repo, I ran `docker context use default`. Comman
 the Makefile now work without the prefix. To revert: `docker context use desktop-linux`. The
 harness itself still honors `DOCKER_CONTEXT`/`DOCKER_HOST`, since it passes the CLI's environment
 through to the `docker` CLI (never into the container).
+
+### D13. gVisor as an opt-in sandbox runtime; runc stays the default
+- **Chosen:** the OCI runtime is a setting (`--runtime`, `EVALHARNESS_SANDBOX_RUNTIME`). It is
+  `runc` by default, and `runsc` (gVisor) when asked for. It's always passed explicitly to
+  `docker run`, so a changed daemon default can't silently swap it. Every result records the
+  runtime requested, the runtime Docker reports it used, and the pids limit actually applied.
+- **Why opt-in instead of the default:** the harness must still work on machines without gVisor
+  (GitHub's CI runners, a reviewer's laptop). Validation is about 55% slower under gVisor
+  (0.87 s vs 1.36 s per container on this machine). The full suite passes under both, so either
+  is a valid choice. The recommended setting for real untrusted models is `runsc`.
+- **What gVisor adds:** with runc, the code's syscalls go straight to the host kernel, filtered
+  only by seccomp, so one kernel bug can mean an escape. With gVisor they go to the Sentry, a
+  user-space kernel written in Go, which itself uses only a small, seccomp-restricted set of host
+  syscalls. An attacker now needs two bugs, one in gVisor and one in the host kernel.
+- **Difference found in testing:** under gVisor, `--pids-limit` limits the *Sentry's host
+  threads*, not the processes inside. At pids=32, a fork bomb starved the Sentry, which crashed
+  (exit 2, no output). The classifier correctly refused to trust that and recorded
+  `sandbox_violation`, but for the wrong reason. Measured threshold: crashes at 48, fine at 56.
+  **Fix:** under runsc, the pids limit is raised to at least 256 (`RUNSC_MIN_PIDS`), and the
+  memory cgroup stops fork bombs instead (they now come out as `resource_limit`, OOM-killed).
+- **Probe test difference:** `/proc/self/status` inside gVisor shows `Seccomp: 0`, because
+  gVisor applies Docker's seccomp profile internally and doesn't report it there. So under
+  runsc, the probe instead checks that the kernel it sees is *not* the host kernel.
+- **Install:** apt package `runsc` from gvisor.dev, `runsc install`, then restart Docker. It's
+  root-owned in `/usr/bin` on purpose. A runtime binary in a user-writable directory would let
+  any process running as Joshua replace code that dockerd runs as root.

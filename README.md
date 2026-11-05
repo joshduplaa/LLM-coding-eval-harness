@@ -19,12 +19,18 @@ uv run evalharness list-tasks
 uv run evalharness validate                       # every task: reference passes, incorrect fails
 uv run evalharness run --model mock-reference     # end to end; writes runs/<run_id>.json
 uv run evalharness run --model mock-mixed --samples 3 --seed 1
-make test             # 68 tests, including adversarial sandbox tests
+make test             # 71 tests, including adversarial sandbox tests
+make test-gvisor      # the same suite with every sandbox under gVisor (if installed)
 ```
 
 The harness uses whichever Docker daemon your CLI points at. If `docker info` fails because your
 active context isn't running (for example Docker Desktop is stopped), switch with
 `docker context use default` or set `DOCKER_CONTEXT` for one command.
+
+**Stronger isolation (optional):** with [gVisor](https://gvisor.dev) installed and registered
+as Docker's `runsc` runtime, pass `--runtime runsc` (or set `EVALHARNESS_SANDBOX_RUNTIME=runsc`).
+The untrusted code then talks to gVisor's user-space kernel instead of the host kernel. That
+costs about 0.5 s more per sample. Each result records which runtime was used. See D13.
 
 ## Docs
 - [docs/PLAN.md](docs/PLAN.md): architecture and milestones

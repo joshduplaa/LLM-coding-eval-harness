@@ -12,6 +12,7 @@ import pytest
 
 from evalharness.sandbox import (
     DEFAULT_RUNTIME,
+    RUNSC_MIN_PIDS,
     SANDBOX_UID,
     SandboxLimits,
     docker_run_args,
@@ -42,7 +43,6 @@ def test_docker_run_args_include_every_hardening_flag():
         f"--user {SANDBOX_UID}",
         "--memory 256m",
         "--memory-swap 256m",
-        "--pids-limit 64",
         "--ipc none",
         f"--runtime {DEFAULT_RUNTIME}",
     ]:
@@ -54,6 +54,15 @@ def test_docker_run_args_include_every_hardening_flag():
 def test_runtime_flag_is_configurable():
     args = docker_run_args("n", "img", SandboxLimits(), runtime="runsc")
     assert args[args.index("--runtime") + 1] == "runsc"
+
+
+def test_pids_limit_per_runtime():
+    def pids(runtime):
+        args = docker_run_args("n", "img", SandboxLimits(pids=64), runtime=runtime)
+        return int(args[args.index("--pids-limit") + 1])
+
+    assert pids("runc") == 64  # caps processes inside the container
+    assert pids("runsc") == RUNSC_MIN_PIDS  # caps gVisor's own threads; needs headroom
 
 
 # ---- docker: baseline ----
@@ -91,6 +100,7 @@ try:
 except OSError as e:
     facts["rootfs_writable"] = False
 facts["tmp_mount"] = [l for l in open("/proc/mounts") if " /tmp " in l]
+facts["kernel"] = open("/proc/version").read().strip()
 print("PROBE:" + json.dumps(facts))
 
 def f():
@@ -103,7 +113,15 @@ def f():
     assert facts["uid"] == 10001 and facts["euid"] == 10001  # non-root
     assert int(facts["cap_eff"], 16) == 0  # no capabilities
     assert facts["no_new_privs"] == "1"  # can't gain privileges via setuid binaries
-    assert facts["seccomp"] == "2"  # seccomp filter active
+    host_kernel = Path("/proc/version").read_text().strip()
+    if DEFAULT_RUNTIME == "runsc":
+        # gVisor: the code talks to gVisor's user-space kernel, not the host's. (Docker's seccomp
+        # profile is applied by gVisor internally and isn't shown in /proc; gVisor protects the
+        # host with its own seccomp filter on the Sentry.)
+        assert facts["kernel"] != host_kernel
+    else:
+        assert facts["kernel"] == host_kernel  # runc shares the host kernel...
+        assert facts["seccomp"] == "2"  # ...so Docker's seccomp filter must be active
     assert "EVALHARNESS_FAKE_SECRET" not in facts["env_keys"]  # host env not passed in
     assert "do-not-leak-me" not in facts["env_values"]
     assert facts["net_ifaces"] == ["lo"]  # no network besides loopback

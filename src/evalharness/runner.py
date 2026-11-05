@@ -81,6 +81,7 @@ def _outcome_summary(o: SandboxOutcome) -> dict:
         "image_id": o.image_id,
         "runtime": o.runtime,
         "runtime_used": o.runtime_used,
+        "pids_limit_applied": o.pids_limit_applied,
         "limits": o.limits,
         "docker_returncode": o.docker_returncode,
         "test_returncode": env.get("returncode"),

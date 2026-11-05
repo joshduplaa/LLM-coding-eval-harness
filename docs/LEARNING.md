@@ -73,6 +73,24 @@ envelope is also present.
 - **Precedence:** when several things go wrong, one rule decides the category. The rule puts trust
   and infrastructure first (harness, timeout, OOM, forged output), then the code's behavior.
 
+### OCI runtimes, runc, and gVisor
+Docker doesn't create containers itself. It hands an OCI bundle (a filesystem plus a JSON config
+of namespaces, cgroups, mounts, and seccomp) to a **runtime** binary. **runc** is the default.
+It asks the host kernel to set up the namespaces and cgroups, then `exec`s your process, which
+then makes syscalls directly to the host kernel. **runsc** (gVisor) starts a **Sentry** instead:
+a Go program that implements the Linux syscall interface in user space. Your process's syscalls
+are intercepted (via ptrace or, by default now, the "systrap" platform) and served by the
+Sentry. Only the Sentry talks to the host kernel, through a short allow-list of syscalls.
+
+Things that change under gVisor, and why:
+- `/proc/version` shows gVisor's fake kernel, not the host's. That's the easiest way to tell
+  you're inside.
+- Host-level cgroup limits apply to the *Sentry process*. Memory still works as expected (the
+  Sentry's memory is the sandbox's memory). The pids limit counts the Sentry's host threads,
+  which is why it needs headroom (D13).
+- Syscalls cost more (interception), so startup and I/O-heavy code are slower. Pure computation
+  runs at almost full speed.
+
 ### pytest internals used here
 - **Plugins and hooks:** pytest calls named functions (`pytest_sessionstart`,
   `pytest_runtest_makereport`, ...) on any module loaded with `-p name`. A `wrapper=True` hook
