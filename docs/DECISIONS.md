@@ -103,6 +103,11 @@ but not for testing the harness (see the final decision brief).
 No runtime dependencies in Milestone 1 (argparse, tomllib, subprocess). That keeps the harness easy
 to audit and the sandbox image tiny. Dev tools (pytest, ruff) are repo-local through `uv`.
 
-### D12. Leave the Docker context alone; use `DOCKER_CONTEXT=default` per command
-The active context (`desktop-linux`) wasn't running. Switching the global context would change a
-setting outside the repo, so commands pass the environment variable instead.
+### D12. Docker context: switched the machine's active context to `default` (revised)
+The active context (`desktop-linux`, Docker Desktop) wasn't running; the native Engine
+(`default`, `/var/run/docker.sock`) was. At first I left the global setting alone and prefixed every
+command with `DOCKER_CONTEXT=default`, because changes outside the repo needed approval. Once
+Joshua allowed work outside the repo, I ran `docker context use default`. Commands, tests, and
+the Makefile now work without the prefix. To revert: `docker context use desktop-linux`. The
+harness itself still honors `DOCKER_CONTEXT`/`DOCKER_HOST`, since it passes the CLI's environment
+through to the `docker` CLI (never into the container).

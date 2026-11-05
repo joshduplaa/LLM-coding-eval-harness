@@ -1,5 +1,4 @@
-# Convenience targets. If your active Docker context isn't running, prefix with
-# DOCKER_CONTEXT=default (e.g. `DOCKER_CONTEXT=default make test`).
+# Convenience targets. Docker commands use your active context (`docker context show`).
 SANDBOX_IMAGE ?= evalharness-sandbox:0.1.0
 
 .PHONY: install sandbox-image lint format test test-unit validate demo

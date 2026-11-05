@@ -9,9 +9,12 @@ a teaching checkpoint after each.
 
 - Repo: one commit with a two-line README. Work happens on feature branches. Nothing goes to `main` or GitHub without approval.
 - Available: Python 3.12 through `uv`, Docker Engine 29.5 (cgroup v2, seccomp and AppArmor on) on the `default` context, `gh`.
-  Docker Desktop (`desktop-linux` context) is not running, so commands use `DOCKER_CONTEXT=default`.
-- Missing: `kind`, `kubectl`, `helm`, `terraform`, `ruff`. Ruff will be a repo-local dev dependency.
-  The others are system-level installs, so they need approval at Milestones 4 and 5.
+  Docker Desktop (`desktop-linux` context) wasn't running, so the active context was switched to
+  `default` (see D12).
+- Missing: `kind`, `kubectl`, `helm`, `terraform`, `ruff`. Ruff is a repo-local dev dependency.
+  The rest will be installed as user-local binaries in `~/.local/bin` (already on PATH, no sudo)
+  when Milestones 4 and 5 need them.
+- No passwordless sudo, so anything needing root (e.g. installing gVisor) needs Joshua to run it.
 
 ## Architecture (Milestone 1)
 

@@ -22,8 +22,9 @@ uv run evalharness run --model mock-mixed --samples 3 --seed 1
 make test             # 68 tests, including adversarial sandbox tests
 ```
 
-If Docker Desktop isn't running but the native engine is, prefix commands with
-`DOCKER_CONTEXT=default`.
+The harness uses whichever Docker daemon your CLI points at. If `docker info` fails because your
+active context isn't running (for example Docker Desktop is stopped), switch with
+`docker context use default` or set `DOCKER_CONTEXT` for one command.
 
 ## Docs
 - [docs/PLAN.md](docs/PLAN.md): architecture and milestones
