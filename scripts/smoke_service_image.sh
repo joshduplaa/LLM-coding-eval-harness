@@ -2,7 +2,7 @@
 # Start the service image and check it from the outside. Used by CI and `make smoke`.
 # Usage: scripts/smoke_service_image.sh [image]
 set -euo pipefail
-IMAGE="${1:-evalharness-service:0.1.0}"
+IMAGE="${1:-evalharness-service:0.3.0}"
 NAME="evalharness-smoke-$$"
 PORT="${SMOKE_PORT:-18000}"
 
@@ -24,6 +24,11 @@ done
 
 base="http://127.0.0.1:${PORT}"
 curl -fsS "$base/healthz" | grep -q '"status":"ok"' || fail "/healthz"
+# If the image tag looks like a version, the running code must report that same version.
+tag="${IMAGE##*:}"
+if [[ "$tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  curl -fsS "$base/healthz" | grep -q "\"version\":\"$tag\"" || fail "/healthz version is not $tag"
+fi
 curl -fsS "$base/tasks" | grep -q '"rle_encode"' || fail "/tasks does not list the bundled tasks"
 curl -fsS "$base/runs" | grep -qx '\[\]' || fail "/runs should be empty in a fresh image"
 code="$(curl -s -o /dev/null -w '%{http_code}' "$base/runs/nope")"

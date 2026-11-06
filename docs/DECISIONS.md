@@ -229,3 +229,23 @@ through to the `docker` CLI (never into the container).
   actionlint (pinned image) to catch workflow syntax and expression mistakes before pushing.
 - **Not in CI (yet):** gVisor (needs installing runsc on the runner; D13 keeps runc the default),
   image publishing (that's a deploy concern), and real model calls (not approved).
+
+### D19. Versioning: one package version per milestone, tagged at the merge
+- **Package version** (`pyproject.toml`, `evalharness.__version__`) follows semantic versioning:
+  `MAJOR.MINOR.PATCH`. Below 1.0 the interface isn't promised stable yet, so each milestone bumps
+  MINOR: v0.1.0 = Milestone 1, v0.2.0 = Milestone 2, v0.3.0 = Milestone 3. A test keeps the two
+  copies of the number equal, because every stored result records it.
+- **Git tags** `vX.Y.Z` are annotated tags on the merge commit in `main`, so a version names one
+  exact, findable state of the code. Results also record the git commit, which is what precise
+  reproduction uses. The version is the human-readable label.
+- **Service image tag = package version** (`evalharness-service:0.3.0`). The smoke test checks
+  that `/healthz` in the image reports the same version as its tag.
+- **The sandbox image has its own version** (`evalharness-sandbox:0.1.0`). Its contents (the
+  wrapper, the plugin, pytest, the base image) change rarely and independently of the API. Every
+  result records the sandbox image's content ID (`sha256:…`), which is exact even if a tag is
+  reused. Bump the sandbox tag whenever the wrapper, plugin, or pytest changes.
+- **Mock model ids** (`mock/mixed@0.1.0`) are versioned separately too, and change only if mock
+  behavior changes.
+- **Workflow:** one branch per milestone, merged before the next starts, so branches don't
+  stack. (Milestone 3 was briefly stacked on Milestone 2. It worked, but it was confusing for no
+  benefit.)
