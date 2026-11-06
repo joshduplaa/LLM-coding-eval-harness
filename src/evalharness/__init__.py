@@ -1,3 +1,3 @@
 """LLM coding-eval harness: run model-generated code against tests in a sandbox."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
