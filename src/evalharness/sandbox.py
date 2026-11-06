@@ -34,8 +34,11 @@ from dataclasses import asdict, dataclass, field
 
 from .errors import HarnessError
 
-DEFAULT_IMAGE = os.environ.get("EVALHARNESS_SANDBOX_IMAGE", "evalharness-sandbox:0.1.0")
+DEFAULT_IMAGE = os.environ.get("EVALHARNESS_SANDBOX_IMAGE", "evalharness-sandbox:0.2.0")
 DEFAULT_RUNTIME = os.environ.get("EVALHARNESS_SANDBOX_RUNTIME", "runc")
+# "docker" (default): docker run on this machine. "kubernetes": one pod per sample (D20).
+DEFAULT_BACKEND = os.environ.get("EVALHARNESS_SANDBOX_BACKEND", "docker")
+BACKENDS = ("docker", "kubernetes")
 MAX_OUTPUT = 1024 * 1024
 STARTUP_GRACE_S = 15.0
 SANDBOX_UID = "10001:10001"
@@ -71,6 +74,7 @@ class SandboxOutcome:
 
     image: str
     image_id: str | None = None
+    backend: str = "docker"
     runtime: str | None = None  # requested OCI runtime (runc or runsc)
     runtime_used: str | None = None  # what Docker reports it actually used
     pids_limit_applied: int | None = None  # differs from limits["pids"] under runsc
@@ -217,9 +221,28 @@ def run_in_sandbox(
     limits: SandboxLimits | None = None,
     image: str = DEFAULT_IMAGE,
     runtime: str = DEFAULT_RUNTIME,
+    backend: str | None = None,
 ) -> SandboxOutcome:
-    """Run pytest over `files` (which must include solution.py) in a fresh container."""
+    """Run pytest over `files` (which must include solution.py) in a fresh sandbox."""
     limits = limits or SandboxLimits()
+    backend = backend or os.environ.get("EVALHARNESS_SANDBOX_BACKEND", DEFAULT_BACKEND)
+    if backend == "kubernetes":
+        from .k8s_sandbox import run_in_pod  # imported lazily: Docker users never need it
+
+        return run_in_pod(files, limits, image)
+    if backend != "docker":
+        return SandboxOutcome(
+            image=image,
+            backend=backend,
+            limits=limits.to_dict(),
+            harness_error=f"unknown sandbox backend {backend!r}; expected one of {BACKENDS}",
+        )
+    return _run_in_docker(files, limits, image, runtime)
+
+
+def _run_in_docker(
+    files: dict[str, str], limits: SandboxLimits, image: str, runtime: str
+) -> SandboxOutcome:
     out = SandboxOutcome(
         image=image,
         runtime=runtime,

@@ -1,0 +1,14 @@
+# Local Kubernetes cluster for Milestone 4: one node, running as a Docker container (kind).
+#   kind create cluster --config deploy/kind/cluster.yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: evalharness
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      # Kubernetes has no per-pod process limit flag like `docker run --pids-limit`; the kubelet
+      # applies one limit to every pod on the node. 256 leaves headroom for Prometheus and
+      # Grafana, which are multi-threaded, while still stopping fork bombs (D21).
+      - |
+        kind: KubeletConfiguration
+        podPidsLimit: 256

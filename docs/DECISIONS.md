@@ -238,7 +238,7 @@ through to the `docker` CLI (never into the container).
 - **Git tags** `vX.Y.Z` are annotated tags on the merge commit in `main`, so a version names one
   exact, findable state of the code. Results also record the git commit, which is what precise
   reproduction uses. The version is the human-readable label.
-- **Service image tag = package version** (`evalharness-service:0.3.0`). The smoke test checks
+- **Service image tag = package version** (`evalharness-service:0.3.0`, now `0.4.0`). The smoke test checks
   that `/healthz` in the image reports the same version as its tag.
 - **The sandbox image has its own version** (`evalharness-sandbox:0.1.0`). Its contents (the
   wrapper, the plugin, pytest, the base image) change rarely and independently of the API. Every
@@ -249,3 +249,80 @@ through to the `docker` CLI (never into the container).
 - **Workflow:** one branch per milestone, merged before the next starts, so branches don't
   stack. (Milestone 3 was briefly stacked on Milestone 2. It worked, but it was confusing for no
   benefit.)
+
+### D20. Sandboxes in Kubernetes: one locked-down pod per sample (option C)
+**Question.** In Docker, the harness runs `docker run` for each sample. Inside Kubernetes, how
+should the evaluator start a sandbox?
+
+**Options considered.**
+- **A. Docker-in-Docker / mount the node's Docker socket.** Simplest port, but the socket is root
+  on the node: one bug in the evaluator and the node is gone. Rejected.
+- **B. A long-lived sandbox "worker" pod that runs samples itself.** Fewer pod starts, but samples
+  share a process space and filesystem over time, which breaks the one-sample-one-sandbox rule.
+- **C. One pod per sample, started through the Kubernetes API (chosen).** Same isolation model as
+  Docker (fresh, disposable, locked down), enforced by the platform. Cost: a pod starts in ~2 s
+  versus ~0.5 s for `docker run`.
+
+**How it maps** (`src/evalharness/k8s_sandbox.py`): `--network none` → a deny-all
+NetworkPolicy plus DNS pointed at 127.0.0.1; `--read-only` → `readOnlyRootFilesystem`; tmpfs →
+memory-backed `emptyDir` with `sizeLimit`; non-root, no capabilities, no-new-privileges,
+seccomp → the pod `securityContext`; memory/CPU → `resources.limits`; no secrets →
+`automountServiceAccountToken: false`, `enableServiceLinks: false`, no env, no other volumes.
+Files and the nonce still travel over stdin (`kubectl run -i`), never through the pod spec.
+
+**Defense in depth.** The sandbox namespace enforces the *restricted* Pod Security Standard, so
+if a code change ever drops one of these settings, the API server refuses the pod (tested). The
+evaluator's service account can only manage pods in that namespace (and read the address of the
+`kubernetes` Service); it can't read Secrets or change NetworkPolicies. A ResourceQuota caps how
+many sandbox pods can exist at once.
+
+**Finding: NetworkPolicy isn't instant.** The adversarial suite caught a brand-new pod's *first*
+connection to 1.1.1.1 succeeding: kind's network plugin hadn't yet applied the deny-all policy to
+the new pod. Fix: an **egress gate** in the trusted wrapper. Before any model code runs, it
+connects repeatedly to an address every pod can normally reach (the `kubernetes` Service) and
+continues only after two attempts in a row are dropped. If that never happens within 20 s, the
+sample becomes a `harness_error` (fail closed). After the fix, 6/6 probe pods were blocked on
+the first try; a regression test connects at import time, the earliest moment code can act.
+Caveat: the gate proves the policy is active for *this pod*, by testing one destination. A
+network plugin that enforces policy before the pod starts (Calico, Cilium) would remove the
+window entirely and is the better choice for a real cluster.
+
+**Known gaps vs the Docker backend.**
+- `emptyDir` can't be mounted `noexec`, so code could write and run a binary in `/tmp`. It's
+  still inside every other restriction.
+- No per-pod open-files limit (Kubernetes has no field for it).
+- The process limit is node-wide (`podPidsLimit: 256` in the kubelet), not per sample (D21).
+- Dropped packets mean a connection without a timeout hangs until the sample's time limit, so it
+  is recorded as `timeout`, not `sandbox_violation`. Connections that fail inside `socket.py` or
+  `ssl.py` with a network error *are* classified as violations.
+- Agreement check: the same mock run (seed 1, 15 samples) gave identical categories on both
+  backends.
+
+### D21. Local Kubernetes choices
+- **kind, one node.** A real Kubernetes API with real admission control, NetworkPolicy, and
+  RBAC, entirely on the laptop; no cloud resources, no cost. `make cluster-up` /
+  `cluster-down`. kindnet enforces NetworkPolicy (by dropping packets).
+- **podPidsLimit 256** (kubelet config in `deploy/kind/cluster.yaml`). A fork bomb is contained
+  and recorded as `resource_limit`. It applies to every pod on the node, which is fine for a
+  dedicated eval cluster.
+- **Images are loaded, never pulled,** for our own images (`imagePullPolicy: Never`, `make
+  k8s-images`). Third-party images (Prometheus v3.15.1, Grafana 13.2.5) are pinned by digest
+  and pulled once by the node. A test fails if any image is unpinned.
+- **The evaluator is a Job** (`deploy/k8s/eval-job.yaml`, `make k8s-eval`), created fresh per
+  run with `backoffLimit: 0`: a failed run gets investigated, not silently retried into a
+  different result. Results go to a PersistentVolumeClaim that the read-only API also mounts.
+- **Prometheus** scrapes `/metrics/` on the API every 15 s. Only the latest run per model is
+  exported, so the number of time series stays bounded no matter how many runs are stored.
+- **Grafana has no accounts at all:** anonymous Viewer, no login form, no basic auth, and no
+  initial admin user. So no credential is created, stored, or leaked, and the dashboard can't
+  be edited from the UI (it's provisioned from `scripts/gen_dashboard.py`). Reached only by
+  `make dashboard` (port-forward to 127.0.0.1). Update checks, plugin downloads, and avatars
+  are off, and a NetworkPolicy lets Grafana talk only to Prometheus and DNS.
+- **Dashboard rules:** a rate is never shown without its 95% interval and `n`; harness errors
+  appear next to it; `is_mock` is a column on every table, a counter of mock models is shown in
+  red, and the title and banner say MOCK DATA. Only "passed" is colored green.
+- **NetworkPolicies in the trusted namespace:** ingress denied by default; Prometheus may reach
+  the API, Grafana may reach Prometheus. The evaluator's egress is left open because it must
+  reach the Kubernetes API, and it runs only trusted harness code.
+- **Versions:** package and service/evaluator images 0.4.0; sandbox image 0.2.0 (wrapper gained
+  the egress gate; plugin records exception origin).

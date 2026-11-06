@@ -1,0 +1,74 @@
+# Trusted namespace: nothing comes in unless listed, and each component may only talk to what it
+# needs. (kubectl port-forward reaches a pod through the kubelet, not the pod network, so the
+# dashboard is still reachable from your laptop's 127.0.0.1.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: evalharness
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-from-prometheus
+  namespace: evalharness
+spec:
+  podSelector:
+    matchLabels: {app: evalharness-service}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app: prometheus}
+      ports: [{port: 8000, protocol: TCP}]
+  egress: []  # the API never calls out
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prometheus
+  namespace: evalharness
+spec:
+  podSelector:
+    matchLabels: {app: prometheus}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app: grafana}
+      ports: [{port: 9090, protocol: TCP}]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {app: evalharness-service}
+      ports: [{port: 8000, protocol: TCP}]
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: grafana
+  namespace: evalharness
+spec:
+  podSelector:
+    matchLabels: {app: grafana}
+  policyTypes: [Egress]
+  egress:  # Prometheus and DNS only: no update checks, plugin downloads, or avatars
+    - to:
+        - podSelector:
+            matchLabels: {app: prometheus}
+      ports: [{port: 9090, protocol: TCP}]
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]

@@ -142,6 +142,21 @@ class ResultsStore:
             ).fetchall()
         return [_bools(dict(r)) for r in rows]
 
+    def count_runs(self) -> int:
+        with self._connect() as db:
+            return db.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
+
+    def latest_runs_by_model(self) -> list[dict]:
+        """The most recent run of each model id (ties broken by run_id)."""
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT run_id, model_id, is_mock, started_at FROM runs r WHERE run_id = ("
+                "  SELECT run_id FROM runs WHERE model_id = r.model_id"
+                "  ORDER BY started_at DESC, run_id DESC LIMIT 1"
+                ") ORDER BY model_id"
+            ).fetchall()
+        return [_bools(dict(r)) for r in rows]
+
     def get_run(self, run_id: str) -> dict | None:
         with self._connect() as db:
             row = db.execute("SELECT doc FROM runs WHERE run_id = ?", (run_id,)).fetchone()

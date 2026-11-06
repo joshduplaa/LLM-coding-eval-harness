@@ -9,6 +9,7 @@ the exit status, and the duration.
 from __future__ import annotations
 
 import datetime as dt
+import os
 import platform
 import subprocess
 import uuid
@@ -79,6 +80,7 @@ def _outcome_summary(o: SandboxOutcome) -> dict:
     return {
         "image": o.image,
         "image_id": o.image_id,
+        "backend": o.backend,
         "runtime": o.runtime,
         "runtime_used": o.runtime_used,
         "pids_limit_applied": o.pids_limit_applied,
@@ -147,6 +149,7 @@ def evaluate(
 ) -> dict:
     """Run a full evaluation and return the run document (a JSON-serializable dict)."""
     limits = limits or SandboxLimits()
+    backend = os.environ.get("EVALHARNESS_SANDBOX_BACKEND", "docker")
     run = {
         "run_id": f"{dt.datetime.now(dt.UTC):%Y%m%dT%H%M%SZ}-{uuid.uuid4().hex[:8]}",
         "started_at": _now(),
@@ -156,7 +159,9 @@ def evaluate(
         else None,
         "harness": harness_info(),
         "model": {"id": model.model_id, "is_mock": model.is_mock, "params": params.to_dict()},
-        "sandbox_runtime": runtime,
+        "sandbox_backend": backend,
+        # The OCI runtime is a Docker-backend choice; in Kubernetes the node decides.
+        "sandbox_runtime": runtime if backend == "docker" else None,
         "samples_per_task": samples,
         "validations": [],
         "samples": [],

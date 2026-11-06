@@ -48,6 +48,10 @@ RESOURCE_ERRNOS = {
 }
 VIOLATION_TYPES = {"PermissionError", "gaierror", "herror"}
 VIOLATION_ERRNOS = {errno.EROFS, errno.EACCES, errno.EPERM, errno.ENETUNREACH, errno.EHOSTUNREACH}
+# An OSError raised inside the socket/ssl modules means the code tried to use the network. Under
+# Docker that fails fast (ENETUNREACH); under a Kubernetes NetworkPolicy the packets are dropped,
+# so it surfaces as TimeoutError instead. Tasks never need the network either way (D20).
+NETWORK_ORIGINS = {"socket.py", "ssl.py"}
 # A failed test expectation: a plain assert, or pytest's own failure exception (raised by
 # pytest.raises when nothing was raised, or by pytest.fail). OutcomeException is its base class.
 ASSERTION_TYPES = {"AssertionError", "Failed", "OutcomeException"}
@@ -73,6 +77,8 @@ def _exc_kind(exc: dict | None) -> str | None:
     mro = set(exc.get("mro") or [exc.get("type")])
     eno = exc.get("errno")
     if mro & VIOLATION_TYPES or eno in VIOLATION_ERRNOS:
+        return "violation"
+    if "OSError" in mro and exc.get("origin") in NETWORK_ORIGINS:
         return "violation"
     if mro & RESOURCE_TYPES or eno in RESOURCE_ERRNOS:
         return "resource"

@@ -172,3 +172,42 @@ uncertainty is wider than the printed interval. The report says so.
   to *today*.
 - `concurrency` with `cancel-in-progress` stops an older run on the same branch when you push
   again, which saves minutes and avoids confusing results.
+
+## Milestone 4
+
+### Kubernetes in one page
+- **Cluster:** machines (**nodes**) plus a control plane whose **API server** is the single front
+  door. Everything (`kubectl`, the evaluator, controllers) works by reading and writing objects
+  through it.
+- **Pod:** the smallest thing Kubernetes runs; one or more containers sharing a network
+  identity. Here, one pod = one sandboxed sample.
+- **Deployment:** "keep N copies of this pod running" (the API, Prometheus, Grafana). **Job:**
+  "run this pod to completion once" (the evaluator).
+- **Service:** a stable name and virtual IP in front of pods (`prometheus.evalharness.svc`).
+- **Namespace:** a folder for objects; policies and permissions attach to it. We use two:
+  `evalharness` (trusted) and `evalharness-sandbox` (untrusted code).
+- **kind:** "Kubernetes in Docker". Each node is a Docker container on your laptop.
+
+### Security building blocks
+- **Pod Security Admission:** a namespace label (`pod-security.kubernetes.io/enforce:
+  restricted`) makes the API server reject pods that run as root, keep capabilities, allow
+  privilege escalation, or skip seccomp. A guard rail that doesn't depend on our code being right.
+- **NetworkPolicy:** firewall rules for pods, selected by labels. An empty `podSelector` with no
+  rules means "deny everything". The **network plugin** (CNI) enforces it, which is why it isn't
+  instant for a brand-new pod (D20).
+- **RBAC:** a **ServiceAccount** is a pod's identity; a **Role** lists allowed verbs on resources
+  in one namespace; a **RoleBinding** grants the Role to the account. The evaluator gets "pods
+  in the sandbox namespace" and nothing else.
+- **Service-account token:** by default a pod gets a credential for the API server mounted at
+  `/var/run/secrets/kubernetes.io/serviceaccount/`. Sandbox pods set
+  `automountServiceAccountToken: false`, and a test checks the file isn't there.
+
+### Prometheus and Grafana
+- **Prometheus** asks each target for `/metrics` on a timer (**scraping**) and stores every
+  number as a **time series** identified by name + **labels** (`model_id`, `is_mock`, `task`).
+  Each distinct label combination is a separate series, so labels must have few values
+  (**cardinality**). That's why we export only the latest run per model, not every run ID.
+- **Gauge:** a number that can go up or down (a pass rate). **PromQL:** the query language,
+  for example `max by (model_id) (evalharness_pass_rate{task="_all"})`.
+- **Grafana** draws dashboards from queries. **Provisioning** loads data sources and dashboards
+  from files at startup, so the dashboard lives in Git, not in someone's browser session.

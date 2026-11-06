@@ -3,10 +3,20 @@ import os
 import pytest
 
 from evalharness.errors import HarnessError
-from evalharness.sandbox import DEFAULT_IMAGE, DEFAULT_RUNTIME, available_runtimes, image_id
+from evalharness.sandbox import (
+    DEFAULT_BACKEND,
+    DEFAULT_IMAGE,
+    DEFAULT_RUNTIME,
+    available_runtimes,
+    image_id,
+)
 
 
 def _sandbox_ready() -> str | None:
+    if DEFAULT_BACKEND == "kubernetes":
+        from evalharness.k8s_sandbox import cluster_ready
+
+        return cluster_ready()
     try:
         image_id(DEFAULT_IMAGE)
         if DEFAULT_RUNTIME not in available_runtimes():
@@ -20,7 +30,9 @@ _REASON = _sandbox_ready()
 
 
 def pytest_report_header(config):
-    return f"evalharness sandbox runtime: {DEFAULT_RUNTIME}"
+    if DEFAULT_BACKEND == "kubernetes":
+        return "evalharness sandbox backend: kubernetes"
+    return f"evalharness sandbox backend: docker, runtime: {DEFAULT_RUNTIME}"
 
 
 def pytest_collection_modifyitems(config, items):

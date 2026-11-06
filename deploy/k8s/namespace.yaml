@@ -1,0 +1,19 @@
+# The trusted side: results API, evaluator, Prometheus, Grafana. Also held to "restricted".
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: evalharness
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: results
+  namespace: evalharness
+spec:
+  accessModes: [ReadWriteOnce]  # single-node kind: the evaluator and the API share it
+  resources:
+    requests:
+      storage: 1Gi

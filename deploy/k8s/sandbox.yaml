@@ -1,0 +1,35 @@
+# Where model-generated code runs: one short-lived pod per sample (see src/evalharness/k8s_sandbox.py).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: evalharness-sandbox
+  labels:
+    # The API server rejects any pod here that doesn't meet the "restricted" Pod Security Standard:
+    # non-root, no privilege escalation, all capabilities dropped, seccomp on. A bug in the pod
+    # spec can't silently weaken the sandbox; the pod just won't be created.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted
+---
+# No traffic in or out of any pod in this namespace: the Kubernetes version of --network none.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all
+  namespace: evalharness-sandbox
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+# Caps on the namespace as a whole, so a runaway evaluator can't flood the node with sandboxes.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: sandbox-quota
+  namespace: evalharness-sandbox
+spec:
+  hard:
+    pods: "8"
+    limits.memory: 2Gi
+    limits.cpu: "8"

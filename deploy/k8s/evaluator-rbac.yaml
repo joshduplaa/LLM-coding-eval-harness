@@ -1,0 +1,63 @@
+# The evaluator's only Kubernetes powers: run, watch, attach to, and delete pods in the sandbox
+# namespace, and read the address of the `kubernetes` Service (for the egress gate, D20).
+# It can't read Secrets, touch other namespaces, or change NetworkPolicies.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: evaluator
+  namespace: evalharness
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: run-sandbox-pods
+  namespace: evalharness-sandbox
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [create, get, list, watch, delete]
+  - apiGroups: [""]
+    resources: [pods/attach]
+    verbs: [create, get]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: evaluator-runs-sandbox-pods
+  namespace: evalharness-sandbox
+subjects:
+  - kind: ServiceAccount
+    name: evaluator
+    namespace: evalharness
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: run-sandbox-pods
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: read-kubernetes-service
+  namespace: default
+rules:
+  - apiGroups: [""]
+    resources: [services]
+    resourceNames: [kubernetes]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: evaluator-reads-kubernetes-service
+  namespace: default
+subjects:
+  - kind: ServiceAccount
+    name: evaluator
+    namespace: evalharness
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: read-kubernetes-service

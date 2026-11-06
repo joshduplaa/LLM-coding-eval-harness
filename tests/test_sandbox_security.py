@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from evalharness.sandbox import (
+    DEFAULT_BACKEND,
     DEFAULT_RUNTIME,
     RUNSC_MIN_PIDS,
     SANDBOX_UID,
@@ -22,6 +23,8 @@ from evalharness.scoring import Category, classify
 
 TEST_FILE = "from solution import f\n\n\ndef test_f():\n    assert f() == 42\n"
 LIMITS = SandboxLimits(timeout_s=4, memory_mb=128, pids=32)
+K8S = DEFAULT_BACKEND == "kubernetes"
+SA_TOKEN = "/var/run/secrets/kubernetes.io/serviceaccount/token"  # noqa: S105 - a path
 
 
 def run(solution: str, limits: SandboxLimits = LIMITS, expected_tests: int | None = 1):
@@ -74,7 +77,10 @@ pytestmark_docker = pytest.mark.docker
 def test_correct_solution_passes():
     v, o = run("def f():\n    return 42\n")
     assert v.category == Category.PASSED
-    assert o.runtime_used == DEFAULT_RUNTIME  # Docker really used the runtime we asked for
+    if K8S:
+        assert o.backend == "kubernetes" and o.runtime_used == "kubernetes"
+    else:
+        assert o.runtime_used == DEFAULT_RUNTIME  # Docker really used the runtime we asked for
 
 
 @pytest.mark.docker
@@ -94,6 +100,8 @@ facts["env_keys"] = sorted(os.environ)
 facts["env_values"] = sorted(os.environ.values())
 facts["net_ifaces"] = sorted(l.split(":")[0].strip() for l in open("/proc/net/dev").readlines()[2:])
 facts["docker_sock"] = os.path.exists("/var/run/docker.sock")
+facts["sa_token"] = os.path.exists({SA_TOKEN!r})
+facts["k8s_env"] = [k for k in os.environ if k.startswith("KUBERNETES")]
 facts["host_test_file_visible"] = os.path.exists({host_path!r})
 try:
     open("/usr/evil", "w"); facts["rootfs_writable"] = True
@@ -114,7 +122,7 @@ def f():
     assert int(facts["cap_eff"], 16) == 0  # no capabilities
     assert facts["no_new_privs"] == "1"  # can't gain privileges via setuid binaries
     host_kernel = Path("/proc/version").read_text().strip()
-    if DEFAULT_RUNTIME == "runsc":
+    if DEFAULT_RUNTIME == "runsc" and not K8S:
         # gVisor: the code talks to gVisor's user-space kernel, not the host's. (Docker's seccomp
         # profile is applied by gVisor internally and isn't shown in /proc; gVisor protects the
         # host with its own seccomp filter on the Sentry.)
@@ -124,11 +132,19 @@ def f():
         assert facts["seccomp"] == "2"  # ...so Docker's seccomp filter must be active
     assert "EVALHARNESS_FAKE_SECRET" not in facts["env_keys"]  # host env not passed in
     assert "do-not-leak-me" not in facts["env_values"]
-    assert facts["net_ifaces"] == ["lo"]  # no network besides loopback
+    if K8S:
+        # A pod always gets an interface; the deny-all NetworkPolicy drops its traffic
+        # (checked by the network_connect violation test).
+        assert facts["net_ifaces"] == ["eth0", "lo"]
+    else:
+        assert facts["net_ifaces"] == ["lo"]  # no network besides loopback
+    assert facts["sa_token"] is False  # no Kubernetes API credential
+    assert facts["k8s_env"] == []  # no service-discovery env vars
     assert facts["docker_sock"] is False  # can't drive Docker
     assert facts["host_test_file_visible"] is False  # host filesystem not mounted
     assert facts["rootfs_writable"] is False  # read-only root
-    assert "noexec" in facts["tmp_mount"][0]
+    if not K8S:  # emptyDir can't be mounted noexec: a known gap of the k8s backend (D20)
+        assert "noexec" in facts["tmp_mount"][0]
 
 
 # ---- docker: escape-style behavior → sandbox_violation ----
@@ -136,6 +152,11 @@ def f():
 VIOLATIONS = {
     "network_connect": "import socket\n"
     "def f():\n    socket.create_connection(('1.1.1.1', 53), timeout=2)\n    return 42\n",
+    # The earliest moment untrusted code can act: on Kubernetes, this caught a window where a new
+    # pod's traffic was allowed before the NetworkPolicy took effect (D20, egress gate).
+    "network_connect_at_import": "import socket\n"
+    "socket.create_connection(('1.1.1.1', 53), timeout=2)\n"
+    "def f():\n    return 42\n",
     "dns_lookup": "import socket\n"
     "def f():\n    socket.getaddrinfo('example.com', 80)\n    return 42\n",
     "write_rootfs": "def f():\n    open('/etc/pwned', 'w').write('x')\n    return 42\n",
@@ -223,6 +244,7 @@ def test_missing_image_is_harness_error():
 
 
 @pytest.mark.docker
+@pytest.mark.skipif(K8S, reason="OCI runtimes are a Docker-backend option")
 def test_unknown_runtime_is_harness_error():
     files = {"solution.py": "def f():\n    return 42\n", "test_solution.py": TEST_FILE}
     o = run_in_sandbox(files, LIMITS, runtime="no-such-runtime")
@@ -235,10 +257,36 @@ def test_no_containers_left_behind():
     import subprocess
 
     run("def f():\n    while True:\n        pass\n")
+    if K8S:
+        cmd = ["kubectl", "get", "pods", "-A", "-l", "evalharness=sandbox", "-o", "name"]
+    else:
+        cmd = ["docker", "ps", "-aq", "--filter", "label=evalharness=sandbox"]
     r = subprocess.run(
-        ["docker", "ps", "-aq", "--filter", "label=evalharness=sandbox"],
+        cmd,
         capture_output=True,
         text=True,
         env={**os.environ},
     )
     assert r.stdout.strip() == ""
+
+
+@pytest.mark.docker
+@pytest.mark.skipif(not K8S, reason="Pod Security admission is a Kubernetes feature")
+def test_pod_security_rejects_a_weakened_pod(monkeypatch):
+    """If a code change ever drops a hardening setting, the API server refuses the pod."""
+    from evalharness import k8s_sandbox
+
+    real = k8s_sandbox.pod_overrides
+
+    def weakened(name, image, limits):
+        spec = real(name, image, limits)
+        spec["spec"]["securityContext"].update(runAsNonRoot=False, runAsUser=0)
+        spec["spec"]["containers"][0]["securityContext"]["allowPrivilegeEscalation"] = True
+        return spec
+
+    monkeypatch.setattr(k8s_sandbox, "pod_overrides", weakened)
+    files = {"solution.py": "def f():\n    return 42\n", "test_solution.py": TEST_FILE}
+    o = run_in_sandbox(files, LIMITS)
+    v = classify(o)
+    assert v.category == Category.HARNESS_ERROR, v
+    assert "PodSecurity" in (o.harness_error or ""), o.harness_error

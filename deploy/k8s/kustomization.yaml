@@ -1,0 +1,23 @@
+# Everything except the evaluator Job:  kubectl apply -k deploy/k8s
+# The Job is created fresh for each run:  make k8s-eval  (deploy/k8s/eval-job.yaml)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - sandbox.yaml
+  - namespace.yaml
+  - network-policies.yaml
+  - evaluator-rbac.yaml
+  - service.yaml
+  - prometheus.yaml
+  - grafana.yaml
+configMapGenerator:
+  - name: grafana-dashboards
+    namespace: evalharness
+    files:
+      - grafana/evalharness.json
+  - name: prometheus-config
+    namespace: evalharness
+    files:
+      - prometheus/prometheus.yml
+generatorOptions:
+  disableNameSuffixHash: false  # a changed config gets a new name, which restarts the pod

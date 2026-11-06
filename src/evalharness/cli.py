@@ -21,11 +21,16 @@ from .errors import HarnessError
 from .metrics import summarize_samples
 from .models import MOCK_BEHAVIORS, GenerationParams, make_model
 from .runner import evaluate, validate_task
-from .sandbox import DEFAULT_IMAGE, DEFAULT_RUNTIME, SandboxLimits
+from .sandbox import DEFAULT_BACKEND, DEFAULT_IMAGE, DEFAULT_RUNTIME, SandboxLimits
 from .store import DEFAULT_DB, ResultsStore
 from .tasks import DEFAULT_TASKS_DIR, load_tasks
 
 MOCK_BANNER = "*** MOCK MODEL — synthetic output, NOT a real model result ***"
+
+
+def _sandbox_label(runtime: str) -> str:
+    backend = os.environ.get("EVALHARNESS_SANDBOX_BACKEND", DEFAULT_BACKEND)
+    return f"docker/{runtime}" if backend == "docker" else backend
 
 
 def _tasks_dir(arg: str | None) -> Path:
@@ -59,7 +64,7 @@ def cmd_run(args) -> int:
         print(MOCK_BANNER)
     print(
         f"model={model.model_id} tasks={len(tasks)} samples/task={args.samples} "
-        f"runtime={args.runtime}"
+        f"sandbox={_sandbox_label(args.runtime)}"
     )
 
     def show(rec: dict) -> None:
@@ -134,7 +139,7 @@ def cmd_runs(args) -> int:
         mock = "MOCK " if r["is_mock"] else "     "
         print(
             f"{r['run_id']}  {mock}{r['model_id']:24} {r['n_samples']:>4} samples  "
-            f"runtime={r['sandbox_runtime']}  {r['started_at']}"
+            f"sandbox={r['sandbox_runtime'] or 'kubernetes'}  {r['started_at']}"
         )
     return 0
 

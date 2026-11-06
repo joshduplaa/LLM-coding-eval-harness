@@ -1,0 +1,59 @@
+# The read-only results API. Prometheus scrapes its /metrics/ endpoint.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: evalharness-service
+  namespace: evalharness
+spec:
+  replicas: 1
+  strategy: {type: Recreate}  # one writer-capable pod on the RWO volume at a time
+  selector:
+    matchLabels: {app: evalharness-service}
+  template:
+    metadata:
+      labels: {app: evalharness-service}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10002
+        runAsGroup: 10002
+        fsGroup: 10002
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: api
+          image: evalharness-service:0.4.0
+          imagePullPolicy: Never  # loaded into kind by `make k8s-images`
+          ports: [{containerPort: 8000, name: http}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 50m, memory: 96Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+            failureThreshold: 3
+          volumeMounts:
+            - {name: results, mountPath: /data}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: results
+          persistentVolumeClaim: {claimName: results}
+        - name: tmp
+          emptyDir: {sizeLimit: 16Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: evalharness-service
+  namespace: evalharness
+spec:
+  selector: {app: evalharness-service}
+  ports: [{name: http, port: 8000, targetPort: http}]
