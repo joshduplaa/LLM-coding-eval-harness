@@ -33,3 +33,13 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if "docker" in item.keywords:
             item.add_marker(skip)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_results_db(tmp_path, monkeypatch):
+    """Never let a test write to the real results database."""
+    import evalharness.cli
+
+    db = tmp_path / "test-results.sqlite"
+    monkeypatch.setattr(evalharness.cli, "DEFAULT_DB", db)
+    return db
