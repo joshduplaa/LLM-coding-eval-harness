@@ -12,9 +12,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
+from prometheus_client import make_asgi_app
 
 from . import __version__
 from .metrics import summarize_samples
+from .prom import build_registry
 from .scoring import Category
 from .store import DEFAULT_DB, ResultsStore
 from .tasks import DEFAULT_TASKS_DIR, load_tasks
@@ -33,6 +35,9 @@ def create_app(db_path: str | Path = DEFAULT_DB, tasks_dir: Path = DEFAULT_TASKS
         version=__version__,
         description="Read-only access to evaluation runs, samples, and pass-rate metrics.",
     )
+
+    # Prometheus scrape endpoint. Read-only, like the rest of the API.
+    app.mount("/metrics", make_asgi_app(registry=build_registry(store)))
 
     def run_or_404(run_id: str) -> dict:
         run = store.get_run(run_id)
