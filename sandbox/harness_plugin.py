@@ -26,11 +26,26 @@ _collect_errors: list[str] = []
 _import_error: dict | None = None
 
 
+def _origin(e: BaseException) -> str | None:
+    """File name of the innermost frame the exception was raised in (e.g. "socket.py").
+
+    Lets the host tell "a network call failed" apart from other errors even when the network
+    refuses by silently dropping packets (a TimeoutError) instead of failing fast.
+    """
+    tb = e.__traceback__
+    if tb is None:
+        return None
+    while tb.tb_next is not None:
+        tb = tb.tb_next
+    return os.path.basename(tb.tb_frame.f_code.co_filename)
+
+
 def _exc_info(e: BaseException) -> dict:
     return {
         "type": type(e).__name__,
         "mro": [c.__name__ for c in type(e).__mro__],
         "errno": getattr(e, "errno", None) if isinstance(getattr(e, "errno", None), int) else None,
+        "origin": _origin(e),
         "message": str(e)[:500],
     }
 

@@ -9,6 +9,7 @@ the exit status, and the duration.
 from __future__ import annotations
 
 import datetime as dt
+import os
 import platform
 import subprocess
 import uuid
@@ -79,6 +80,7 @@ def _outcome_summary(o: SandboxOutcome) -> dict:
     return {
         "image": o.image,
         "image_id": o.image_id,
+        "backend": o.backend,
         "runtime": o.runtime,
         "runtime_used": o.runtime_used,
         "pids_limit_applied": o.pids_limit_applied,
@@ -156,6 +158,7 @@ def evaluate(
         else None,
         "harness": harness_info(),
         "model": {"id": model.model_id, "is_mock": model.is_mock, "params": params.to_dict()},
+        "sandbox_backend": os.environ.get("EVALHARNESS_SANDBOX_BACKEND", "docker"),
         "sandbox_runtime": runtime,
         "samples_per_task": samples,
         "validations": [],

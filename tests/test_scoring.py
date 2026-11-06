@@ -178,3 +178,22 @@ def test_parse_envelope_rejects_forgery_and_wrong_nonce():
     assert parse_envelope(forged, NONCE)[0] is None  # only a wrong-nonce envelope
     assert parse_envelope(_env_text() + _env_text(), NONCE)[0] is None  # duplicated
     assert parse_envelope(_env_text(body="not json"), NONCE)[0] is None
+
+
+def test_network_errors_count_as_violations_even_when_packets_are_dropped():
+    # Kubernetes NetworkPolicy drops packets, so connect() times out instead of failing fast.
+    timeout = {
+        **exc("TimeoutError", ["TimeoutError", "OSError", "Exception"]),
+        "origin": "socket.py",
+    }
+    refused = {
+        **exc("ConnectionRefusedError", ["ConnectionRefusedError", "OSError"]),
+        "origin": "ssl.py",
+    }
+    for e in (timeout, refused):
+        assert classify(outcome(report([fail(e)]))).category == Category.SANDBOX_VIOLATION
+
+
+def test_timeout_error_from_the_solution_itself_is_a_runtime_error():
+    own = {**exc("TimeoutError", ["TimeoutError", "OSError", "Exception"]), "origin": "solution.py"}
+    assert classify(outcome(report([fail(own)]))).category == Category.RUNTIME_ERROR

@@ -1,5 +1,5 @@
 # Convenience targets. Docker commands use your active context (`docker context show`).
-SANDBOX_IMAGE ?= evalharness-sandbox:0.1.0
+SANDBOX_IMAGE ?= evalharness-sandbox:0.2.0
 SERVICE_IMAGE ?= evalharness-service:0.3.0
 
 .PHONY: install sandbox-image service-image images smoke ci lint lint-workflows format test test-unit test-gvisor validate demo

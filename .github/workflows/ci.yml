@@ -46,7 +46,7 @@ jobs:
           version: ${{ env.UV_VERSION }}
       - run: uv sync --locked
       - name: Build sandbox image
-        run: docker build -t evalharness-sandbox:0.1.0 sandbox/
+        run: docker build -t evalharness-sandbox:0.2.0 sandbox/
       - name: Run all tests
         # REQUIRE_DOCKER makes a missing sandbox an error, so the security tests can never be
         # silently skipped in CI.
@@ -64,7 +64,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Build sandbox image
-        run: docker build -t evalharness-sandbox:0.1.0 sandbox/
+        run: docker build -t evalharness-sandbox:0.2.0 sandbox/
       - name: Build service image
         run: docker build -t evalharness-service:0.3.0 .
       - name: Smoke-test service image

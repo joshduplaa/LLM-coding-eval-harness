@@ -14,7 +14,7 @@ Requirements: Linux or macOS, Docker, [uv](https://docs.astral.sh/uv/).
 
 ```bash
 make install          # .venv with the package + pytest + ruff
-make sandbox-image    # build evalharness-sandbox:0.1.0
+make sandbox-image    # build evalharness-sandbox:0.2.0
 uv run evalharness list-tasks
 uv run evalharness validate                       # every task: reference passes, incorrect fails
 uv run evalharness run --model mock-reference     # end to end; writes runs/<run_id>.json
