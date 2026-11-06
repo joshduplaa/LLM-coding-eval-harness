@@ -92,3 +92,35 @@ def test_cli_mock_incorrect_is_recorded_as_wrong_answer(tmp_path):
 def test_cli_rejects_real_model(capsys):
     assert main(["run", "--model", "gpt-whatever"]) == 2
     assert "need approval" in capsys.readouterr().err
+
+
+@pytest.mark.docker
+def test_cli_run_is_stored_and_reported(tmp_path, capsys, _isolated_results_db):
+    args = ["run", "--model", "mock-mixed", "--seed", "1", "--task", "rle_encode"]
+    assert main([*args, "--samples", "3", "--out", str(tmp_path)]) == 0
+    run = json.loads(next(tmp_path.glob("*.json")).read_text())
+    out = capsys.readouterr().out
+    assert "95% CI (Wilson)" in out and "OVERALL" in out and out.count("MOCK MODEL") >= 2
+
+    # The stored copy matches the JSON file, and the report recomputes the same numbers.
+    from evalharness.store import ResultsStore
+
+    store = ResultsStore(_isolated_results_db)
+    assert store.get_sample(run["run_id"], "rle_encode", 2) == run["samples"][2]
+    assert main(["report", run["run_id"], "--json"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    cats = [s["result"]["category"] for s in run["samples"]]
+    assert report["is_mock"] is True
+    assert report["overall"]["n_samples"] == 3
+    assert report["overall"]["passed"] == cats.count("passed")
+
+
+def test_cli_import_and_runs(tmp_path, capsys):
+    from .fakes import make_run
+
+    f = tmp_path / "r.json"
+    f.write_text(json.dumps(make_run("imported-1", {"a": ["passed"]})))
+    assert main(["import", str(f)]) == 0
+    assert main(["runs"]) == 0
+    assert "imported-1  MOCK" in capsys.readouterr().out
+    assert main(["import", str(f)]) == 2  # same run twice is refused

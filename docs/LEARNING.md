@@ -98,3 +98,45 @@ Things that change under gVisor, and why:
 - `pytest.raises` failing raises pytest's own `Failed` exception, not `AssertionError`. Both are
   "the test's expectation was not met", so both count as `wrong_answer`.
 - Exit codes: 0 all passed, 1 some failed, 2 interrupted, 3 internal error, 4 usage, 5 no tests.
+
+## Milestone 2
+
+### Confidence intervals, in plain terms
+A pass rate from 15 samples is an estimate. If you reran with 15 fresh samples, you'd get a
+somewhat different number. A **95% confidence interval** is a range built by a method that,
+across many repetitions, contains the true rate 95% of the time. Width shrinks roughly as
+`1/sqrt(n)`: to halve the width you need about four times the samples. Two runs whose intervals
+overlap heavily have *not* been shown to differ. That's one reason the project never says one
+model is better.
+
+**Wald vs Wilson.** Wald, `p ± 1.96·sqrt(p(1-p)/n)`, is centered on the observed rate. At 5/5 the
+spread term is 0, so it claims [100%, 100%]. Wilson asks instead: "which true rates p would make
+this observation unsurprising?" It solves `|p̂ − p| ≤ 1.96·sqrt(p(1−p)/n)` for p. The width uses
+the *candidate* p, not the observed one, so it never collapses to zero and stays inside [0, 1].
+`tests/test_metrics.py` checks our formula against that quadratic solved directly.
+
+**Independence.** The math assumes each sample is an independent coin flip. Ten samples of
+one hard task aren't ten independent flips. They're closer to one flip repeated, so the real
+uncertainty is wider than the printed interval. The report says so.
+
+### SQLite essentials used here
+- A single file, no server. Python ships with it (`sqlite3`).
+- **Transactions:** `with connection:` commits if the block succeeds and rolls back if it
+  raises. Saving a run is one transaction, so a crash halfway leaves *nothing*, never half a
+  run (tested in `test_failed_save_writes_nothing`).
+- **Parameterized queries:** `execute("... WHERE run_id = ?", (run_id,))`. The database receives
+  the value separately from the SQL text, so it can never be run as SQL. This is the defense
+  against SQL injection. Never build SQL with f-strings from data.
+- **`PRAGMA user_version`:** a free integer in the file header, used here as the schema version.
+
+### HTTP APIs with FastAPI
+- An endpoint is a function with a decorator: `@app.get("/runs/{run_id}")`. Path parameters come
+  from the URL, and query parameters (`?category=timeout`) from the function's arguments.
+- Type hints are validation. `category: Category | None` rejects unknown values with **422
+  Unprocessable Entity** before our code runs. `Query(100, ge=1, le=1000)` bounds `limit`.
+- Status codes used: 200 OK, 404 Not Found (no such run), 405 Method Not Allowed (POST/DELETE on
+  a read-only API), 422 (bad input).
+- `create_app(db_path)` is an **app factory**: tests build an app over a temporary database and
+  call it in-process with `TestClient`, with no real network.
+- Binding to `127.0.0.1` means only this machine can connect; `0.0.0.0` would expose it to the
+  network. Default to the narrow one.

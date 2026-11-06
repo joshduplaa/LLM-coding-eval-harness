@@ -137,3 +137,53 @@ through to the `docker` CLI (never into the container).
 - **Install:** apt package `runsc` from gvisor.dev, `runsc install`, then restart Docker. It's
   root-owned in `/usr/bin` on purpose. A runtime binary in a user-writable directory would let
   any process running as Joshua replace code that dockerd runs as root.
+
+## Milestone 2 — Results, metrics, and API
+
+### D14. SQLite store: full JSON records plus a few indexed columns, append-only
+- **Chosen:** `results/evalharness.sqlite` (git-ignored), via Python's built-in `sqlite3`. Each
+  run's document and each complete sample record are stored as JSON text. Fields we filter on
+  (model, task, category, test counts, duration) are copied into real columns with an index.
+  A run is inserted once, in one transaction, and never updated; inserting the same run again
+  fails. The JSON file in `runs/` is still written, so the database can always be rebuilt with
+  `evalharness import runs/*.json`.
+- **Alternatives:** (a) JSON files only: simple, but every question means loading every file.
+  (b) Fully normalized tables (one per field group): every new record field becomes a
+  migration, and it's easy to drop a field that reproducibility needs. (c) Postgres: real
+  concurrency and a server to run, which a single-machine harness doesn't need yet.
+- **Why:** the JSON column guarantees nothing needed to reproduce a sample is lost, and the
+  columns make counting and filtering plain SQL. Append-only means a stored result can't be
+  quietly edited later. Schema version lives in `PRAGMA user_version`, and an unknown version
+  is refused instead of misread.
+- **Safety:** every value goes in through `?` parameters, never string formatting, so model
+  output like `'); DROP TABLE runs; --` is stored as text (tested).
+
+### D15. Pass rate = passed / scored, with n, a Wilson 95% interval, and exclusions shown
+- **Denominator:** every category except `harness_error`. Excluded samples are always reported
+  as `n_excluded`, and a summary is flagged when more than 5% are excluded (see the Milestone 1
+  checkpoint: the exclusion bucket is an attack surface if it's hidden).
+- **Interval:** Wilson score, not the textbook Wald interval `p ± 1.96·sqrt(p(1-p)/n)`. Wald gives
+  [100%, 100%] for 5/5, claiming certainty from five samples, and can go outside [0, 1]. Wilson
+  gives [56.6%, 100%] for 5/5. Tested against published values and an independent derivation.
+- **Stated limitation:** the overall interval treats samples as independent. Several samples of
+  the same task are correlated (a model that can't do a task fails it repeatedly), so the real
+  uncertainty is wider. Every report prints this note. A clustered or bootstrap-over-tasks
+  interval is the fix if we ever report overall rates with many samples per task.
+- **No comparisons:** metrics describe one run. Nothing in the code ranks models.
+
+### D16. A read-only FastAPI service, bound to localhost by default
+- **Chosen:** FastAPI + uvicorn. Endpoints: `/healthz`, `/tasks`, `/runs`, `/runs/{id}`,
+  `/runs/{id}/metrics`, `/runs/{id}/samples` (filter by task and category, paginated), and
+  `/runs/{id}/samples/{task}/{index}` (the full record). Every response about a mock run includes
+  `is_mock: true` and the MOCK notice, so the label travels with the data.
+- **Read-only:** no endpoint starts a run. Starting runs over HTTP means the service starts
+  sandboxes, and how to do that safely in Kubernetes is the Milestone 4 design question.
+- **Alternatives:** Python's built-in `http.server` (no dependencies, but no input validation
+  or generated docs); Flask (fine, but FastAPI validates query parameters from type hints, for
+  example a bad `category` gets a 422, and produces OpenAPI docs at `/docs`).
+- **Cost:** the first runtime dependencies (fastapi, uvicorn). The harness core (sandbox,
+  scoring, runner) still imports none of them.
+- **Supply-chain check:** a deprecation warning said to install `httpx2` instead of `httpx` for
+  the test client. A near-identical package name is a classic typosquatting pattern, so before
+  installing I confirmed the advice is in Starlette's own source and that `httpx2` on PyPI has
+  the same author as `httpx`, maintained under the pydantic organization.
