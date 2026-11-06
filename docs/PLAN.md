@@ -48,7 +48,7 @@ counted as a model failure.
    memory and process bombs, output floods, harness tampering).
 2. **Results and service.** SQLite results store, metrics (pass rate with a Wilson 95% CI,
    sample sizes, counts per category), and a small FastAPI service.
-3. **Packaging and CI.** Harness service image, plus a GitHub Actions workflow that runs
+3. **Packaging and CI.** *(Done: D17–D18.)* Harness service image, plus a GitHub Actions workflow that runs
    lint, tests (sandbox tests included, since GitHub runners have Docker), and image builds.
    The workflow uses no secrets and deploys nothing.
 4. **Local deployment and monitoring.** kind cluster, Prometheus metrics endpoint, and a

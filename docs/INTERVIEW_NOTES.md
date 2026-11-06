@@ -93,3 +93,24 @@ A library warning told me to install a package whose name differs from a popular
 character, which is exactly what typosquatting looks like. I checked that the advice came from
 Starlette's own source and that the PyPI metadata had the same author and a legitimate repo
 before installing. It takes two minutes and is worth doing every time.
+
+## Milestone 3
+
+### 14. "How do you keep secrets out of Docker images and CI?"
+Allowlist `.dockerignore`, so the build context only contains what's listed. A smoke test
+asserts `.env`, `.git`, and the results directories aren't in the image. The image was also
+tested against a deliberately bad copy with a `.env` planted in it, to prove the check fails
+when it should. In CI: no secrets referenced at all, a read-only token, and
+`persist-credentials: false`. The easiest secret to protect is one the pipeline never has.
+
+### 15. "Why pin actions and images by hash?"
+Tags are mutable. The 2025 `tj-actions/changed-files` compromise re-pointed version tags to
+code that dumped CI secrets into logs, and anyone pinned to a SHA was unaffected. Same for base
+images: our results record the sandbox image ID, so the base needs to be exactly reproducible.
+The tradeoff is that patches need a deliberate bump; a bot like Dependabot can automate that.
+
+### 16. "Why is the API bound to 0.0.0.0 in the container if localhost is safer?"
+Because inside a container, localhost is the container itself. Docker forwards published ports
+to the container's network interface, not its loopback. So the container listens on all of
+*its* interfaces, and the real exposure decision is made by `-p 127.0.0.1:8000:8000` on the
+host. Same principle, enforced at a different layer.

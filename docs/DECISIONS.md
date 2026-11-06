@@ -187,3 +187,65 @@ through to the `docker` CLI (never into the container).
   the test client. A near-identical package name is a classic typosquatting pattern, so before
   installing I confirmed the advice is in Starlette's own source and that `httpx2` on PyPI has
   the same author as `httpx`, maintained under the pydantic organization.
+
+## Milestone 3 — Images and CI
+
+### D17. Two images with separate jobs: the sandbox runs untrusted code, the service never does
+- **Service image** (`Dockerfile` at the repo root): the read-only API. Multi-stage build. The
+  first stage installs dependencies with `uv sync --locked` (exact versions from `uv.lock`). The
+  final stage copies only the virtualenv and the tasks: no uv, no build tools, no source tree,
+  no `.git`. It runs as uid 10002 (a different user from the sandbox's 10001), has a Docker
+  `HEALTHCHECK` against `/healthz`, and keeps its database on a `/data` volume.
+- **No Docker inside the service image.** It can't start sandboxes, which matches the
+  read-only API (D16). Giving a container the Docker socket is effectively giving it root on
+  the host, so that's a deliberate Milestone 4 decision, not a default.
+- **Allowlist `.dockerignore`:** start from "ignore everything" and list what's needed. A
+  denylist fails open: forget one pattern and `.env` is in the build context. An allowlist fails
+  closed. The smoke test checks that `.env`, `.git`, `results/`, `runs/`, and `uv` are absent.
+- **Pinned base images:** `python:3.12-slim@sha256:…` and `uv:0.10.2@sha256:…`. A tag like
+  `3.12-slim` is re-pointed whenever Debian or Python ships a patch, so the same Dockerfile
+  could build different images. The sandbox image ID is recorded on every result (D1), so
+  pinning makes "same image" mean something. Cost: security patches only arrive when someone
+  bumps the digest, so it needs a periodic update (Dependabot can do it later).
+- **`--host 0.0.0.0` inside the container:** inside a container, `127.0.0.1` is the container's
+  own loopback, which Docker's port publishing can't reach. The exposure decision moves to
+  `docker run -p 127.0.0.1:8000:8000`, which publishes to this machine only.
+
+### D18. CI: three parallel jobs, read-only token, no secrets, no deploy
+- **Jobs:** `lint` (ruff check plus format check), `test` (builds the sandbox image, then the
+  *whole* suite including the adversarial Docker tests, then checks no containers were left),
+  and `images` (builds both images, runs the smoke test). They run in parallel, so a lint error
+  doesn't hide a test failure.
+- **Security tests can't be skipped silently:** CI sets `EVALHARNESS_REQUIRE_DOCKER=1`, which
+  turns "sandbox unavailable" into an error instead of a skip (conftest).
+- **Least privilege:** `permissions: contents: read` and `persist-credentials: false`. The job
+  token can't push, comment, or publish, and isn't left on disk for later steps. No `secrets.*`
+  appears anywhere in the workflow.
+- **Supply chain:** third-party actions are pinned to full commit SHAs, with the version in a
+  comment. In 2025 the popular `tj-actions/changed-files` action had its tags re-pointed to
+  malicious code, and workflows pinned by SHA were unaffected. Only two actions are used
+  (`checkout`, `setup-uv`); images are built with plain `docker build` rather than another action.
+- **Checked locally first:** `make ci` runs the same steps, and `make lint-workflows` runs
+  actionlint (pinned image) to catch workflow syntax and expression mistakes before pushing.
+- **Not in CI (yet):** gVisor (needs installing runsc on the runner; D13 keeps runc the default),
+  image publishing (that's a deploy concern), and real model calls (not approved).
+
+### D19. Versioning: one package version per milestone, tagged at the merge
+- **Package version** (`pyproject.toml`, `evalharness.__version__`) follows semantic versioning:
+  `MAJOR.MINOR.PATCH`. Below 1.0 the interface isn't promised stable yet, so each milestone bumps
+  MINOR: v0.1.0 = Milestone 1, v0.2.0 = Milestone 2, v0.3.0 = Milestone 3. A test keeps the two
+  copies of the number equal, because every stored result records it.
+- **Git tags** `vX.Y.Z` are annotated tags on the merge commit in `main`, so a version names one
+  exact, findable state of the code. Results also record the git commit, which is what precise
+  reproduction uses. The version is the human-readable label.
+- **Service image tag = package version** (`evalharness-service:0.3.0`). The smoke test checks
+  that `/healthz` in the image reports the same version as its tag.
+- **The sandbox image has its own version** (`evalharness-sandbox:0.1.0`). Its contents (the
+  wrapper, the plugin, pytest, the base image) change rarely and independently of the API. Every
+  result records the sandbox image's content ID (`sha256:…`), which is exact even if a tag is
+  reused. Bump the sandbox tag whenever the wrapper, plugin, or pytest changes.
+- **Mock model ids** (`mock/mixed@0.1.0`) are versioned separately too, and change only if mock
+  behavior changes.
+- **Workflow:** one branch per milestone, merged before the next starts, so branches don't
+  stack. (Milestone 3 was briefly stacked on Milestone 2. It worked, but it was confusing for no
+  benefit.)

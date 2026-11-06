@@ -1,0 +1,10 @@
+# Allowlist: the build context contains only what the service image needs.
+# Anything else (.env, results/, runs/, .git, .venv) never reaches the Docker daemon.
+*
+!pyproject.toml
+!uv.lock
+!README.md
+!src/
+!tasks/
+**/__pycache__
+**/*.pyc
