@@ -1,13 +1,27 @@
 # Convenience targets. Docker commands use your active context (`docker context show`).
 SANDBOX_IMAGE ?= evalharness-sandbox:0.1.0
+SERVICE_IMAGE ?= evalharness-service:0.1.0
 
-.PHONY: install sandbox-image lint format test test-unit test-gvisor validate demo
+.PHONY: install sandbox-image service-image images smoke ci lint lint-workflows format test test-unit test-gvisor validate demo
 
 install:            ## create .venv and install the package + dev tools
 	uv sync
 
 sandbox-image:      ## build the image untrusted code runs in
 	docker build -t $(SANDBOX_IMAGE) sandbox/
+
+service-image:      ## build the read-only API image
+	docker build -t $(SERVICE_IMAGE) .
+
+images: sandbox-image service-image
+
+smoke: service-image ## start the service image and check it from outside
+	scripts/smoke_service_image.sh $(SERVICE_IMAGE)
+
+ci: lint lint-workflows images test smoke ## everything the GitHub Actions workflow runs
+
+lint-workflows:     ## check .github/workflows with actionlint (pinned image)
+	docker run --rm -v "$$PWD:/repo:ro" -w /repo rhysd/actionlint:1.7.12 -color=false
 
 lint:
 	uv run ruff check .
