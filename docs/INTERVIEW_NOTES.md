@@ -114,3 +114,25 @@ Because inside a container, localhost is the container itself. Docker forwards p
 to the container's network interface, not its loopback. So the container listens on all of
 *its* interfaces, and the real exposure decision is made by `-p 127.0.0.1:8000:8000` on the
 host. Same principle, enforced at a different layer.
+
+### 17. "How do you run untrusted code on Kubernetes?"
+One disposable pod per sample, in a namespace that enforces the restricted Pod Security
+Standard and denies all traffic, with no service-account token, a read-only root, memory and
+CPU limits, and a deadline. The evaluator has RBAC for pods in that namespace only. I rejected
+mounting the Docker socket, because the socket is effectively root on the node.
+
+### 18. "Tell me about a bug your tests caught."
+The adversarial suite ran unchanged against the new Kubernetes backend, and one test failed: a
+pod's very first connection to the internet succeeded even though a deny-all NetworkPolicy
+existed. The network plugin needs a moment to learn about a new pod, and until then its traffic
+is allowed. The fix had to be fail-closed and had to run before any untrusted code. The trusted
+wrapper now proves the block is in force, by checking that a normally reachable in-cluster
+address is dropped, before running the solution, and it records a harness error if the block
+never appears. Lessons: run the same attack tests against every backend, and treat "the policy
+exists" and "the policy is enforced" as different claims.
+
+### 19. "Why does your Grafana have no login?"
+A login means a credential to create, store, rotate, and possibly leak. The dashboard is
+read-only and reached only by port-forward to localhost, so anonymous Viewer with no login
+form, no basic auth, and no admin user removes the credential entirely. The dashboard is
+provisioned from code, so nobody needs to edit it in the UI.

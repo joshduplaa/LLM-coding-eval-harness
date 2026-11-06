@@ -51,9 +51,9 @@ counted as a model failure.
 3. **Packaging and CI.** *(Done: D17–D18.)* Harness service image, plus a GitHub Actions workflow that runs
    lint, tests (sandbox tests included, since GitHub runners have Docker), and image builds.
    The workflow uses no secrets and deploys nothing.
-4. **Local deployment and monitoring.** kind cluster, Prometheus metrics endpoint, and a
-   Grafana dashboard. Needs approval to install kind and kubectl. The big design question
-   is how the service starts sandboxes from inside Kubernetes; it is settled at that point.
+4. **Local deployment and monitoring.** *(Done: D20–D21.)* kind cluster, Prometheus metrics
+   endpoint, and a Grafana dashboard. Sandboxes in Kubernetes: one locked-down pod per sample
+   (option C), started by an evaluator Job whose RBAC only covers the sandbox namespace.
 5. **Infrastructure draft.** Terraform for a provisional target, checked only with
    `terraform fmt` and `terraform validate`. Includes a deploy workflow that is disabled by default.
 6. **Handoff.** An accurate README covering setup, architecture, security limits, and known gaps,
