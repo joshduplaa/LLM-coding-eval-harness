@@ -5,7 +5,7 @@ records reproducible, categorized results. The goal is to package it with Docker
 Terraform, deploy it through GitHub Actions, and monitor pass rates with Grafana. Those parts are
 built milestone by milestone; see [docs/PLAN.md](docs/PLAN.md).
 
-> **Status: Milestone 1 (core harness).** Only a **mock model** exists. Every result it produces
+> **Status: Milestones 1–2 (core harness; results, metrics, read-only API).** Only a **mock model** exists. Every result it produces
 > is synthetic and labeled `MOCK`. It is not a measurement of any real model.
 
 ## Quick start
@@ -18,8 +18,11 @@ make sandbox-image    # build evalharness-sandbox:0.1.0
 uv run evalharness list-tasks
 uv run evalharness validate                       # every task: reference passes, incorrect fails
 uv run evalharness run --model mock-reference     # end to end; writes runs/<run_id>.json
-uv run evalharness run --model mock-mixed --samples 3 --seed 1
-make test             # 71 tests, including adversarial sandbox tests
+uv run evalharness run --model mock-mixed --samples 3 --seed 1   # prints pass rates + 95% CIs
+uv run evalharness runs                         # stored runs (results/evalharness.sqlite)
+uv run evalharness report <run_id>              # the report again; --json for machines
+uv run evalharness serve                        # read-only API at http://127.0.0.1:8000/docs
+make test             # 101 tests, including adversarial sandbox tests
 make test-gvisor      # the same suite with every sandbox under gVisor (if installed)
 ```
 

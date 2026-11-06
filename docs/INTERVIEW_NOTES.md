@@ -71,3 +71,25 @@ unexplained missing result was called a violation, never a pass.
 Container start plus pytest run: ~0.6 s per sample. Validation: ~1.5 s per task. A timeout sample
 costs the full timeout (10 s by default). That's why timeouts dominate wall time in `mock-mixed` runs.
 gVisor: about 1.36 s vs 0.87 s per container, about 0.5 s of overhead per sample.
+
+## Milestone 2
+
+### 11. "How do you report a pass rate honestly?"
+Always three things together: the rate, the sample size it came from, and an interval. 4/15 is
+26.7%, but the 95% Wilson interval is 10.9%–52.0%, so "about a quarter" is all you can say. I
+chose Wilson over the textbook Wald interval because Wald claims [100%, 100%] from 5/5. I also
+state the limitation that samples of the same task are correlated, so the overall interval is
+optimistic. Infrastructure failures are excluded from the denominator but always shown, because a
+hidden exclusion bucket can be gamed.
+
+### 12. "Why store JSON in a SQL database?"
+The record schema will keep growing (it already gained runtime fields in Milestone 1), and
+reproducibility needs *every* field. So the full record is stored as JSON, and only the fields
+we query are copied into indexed columns. It's append-only, with one transaction per run and
+parameterized queries throughout.
+
+### 13. Supply chain: the `httpx2` warning
+A library warning told me to install a package whose name differs from a popular one by one
+character, which is exactly what typosquatting looks like. I checked that the advice came from
+Starlette's own source and that the PyPI metadata had the same author and a legitimate repo
+before installing. It takes two minutes and is worth doing every time.
