@@ -1,9 +1,12 @@
 """Trusted wrapper that runs as PID 1 inside the sandbox container.
 
 The host sends one JSON document on stdin:
-    {"files": {"solution.py": "...", "test_x.py": "..."}, "timeout_s": 10, "nonce": "<hex>"}
+    {"files": {"solution.py": "...", "test_x.py": "..."}, "timeout_s": 10, "nonce": "<hex>",
+     "egress_gate": {"host": "10.96.0.1", "port": 443, "max_wait_s": 20}}   # gate optional
 
 The wrapper:
+  0. if asked (Kubernetes backend), waits until the network is provably blocked before any
+     untrusted code runs (see _wait_for_egress_block),
   1. writes the files to /tmp/work (a size-limited tmpfs; the root filesystem is read-only),
   2. checks that solution.py compiles, in a child process (compiling does not execute code,
      but a pathological file can still crash or hang the parser, so it gets its own process),
@@ -24,6 +27,7 @@ import json
 import os
 import re
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -88,6 +92,34 @@ def _run_child(argv: list[str], deadline: float, env: dict[str, str]) -> tuple[i
     return rc, timed_out
 
 
+def _wait_for_egress_block(gate: dict) -> str | None:
+    """Return None once traffic to a normally reachable address is dropped, else an error.
+
+    A Kubernetes NetworkPolicy is enforced by the network plugin, which can take a moment to
+    learn about a brand-new pod. Until it does, the pod's traffic is allowed. On kind that window
+    was long enough for a connection to 1.1.1.1 to succeed. So before running untrusted code,
+    this trusted wrapper repeatedly connects to an address every pod can normally reach (the
+    Kubernetes API service) and only goes on once two attempts in a row time out, which shows
+    the deny-all policy now applies to this pod. If that never happens, fail closed.
+    """
+    host, port = str(gate["host"]), int(gate["port"])
+    give_up = time.monotonic() + float(gate.get("max_wait_s", 20))
+    blocked_in_a_row = 0
+    while time.monotonic() < give_up:
+        try:
+            socket.create_connection((host, port), timeout=0.3).close()
+            blocked_in_a_row = 0  # reachable: the policy isn't in force yet
+            time.sleep(0.1)
+        except TimeoutError:
+            blocked_in_a_row += 1  # dropped, as the deny-all policy does
+            if blocked_in_a_row >= 2:
+                return None
+        except OSError:
+            blocked_in_a_row = 0  # refused/unreachable proves nothing about the policy
+            time.sleep(0.1)
+    return f"network policy not in force after {gate.get('max_wait_s', 20)}s"
+
+
 def _tail(path: str, limit: int) -> str:
     try:
         with open(path, "rb") as f:
@@ -147,8 +179,14 @@ def main() -> None:
                 raise ValueError(f"unsafe file name: {name!r}")
             with open(os.path.join(WORK, name), "w", encoding="utf-8") as f:
                 f.write(content)
+        gate = spec.get("egress_gate")
+        gate_problem = _wait_for_egress_block(gate) if gate else None
     except (ValueError, KeyError, TypeError, OSError) as e:
         envelope["wrapper_error"] = f"{type(e).__name__}: {e}"
+        _emit(envelope, nonce)
+        return
+    if gate_problem:
+        envelope["wrapper_error"] = gate_problem
         _emit(envelope, nonce)
         return
 

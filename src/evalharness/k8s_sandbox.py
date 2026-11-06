@@ -19,6 +19,10 @@ Mapping from the Docker backend (sandbox.docker_run_args) to Kubernetes:
 The sandbox namespace also enforces the "restricted" Pod Security Standard, so the API server
 itself rejects any pod that drops one of these settings.
 
+A NetworkPolicy only takes effect once the network plugin has seen the new pod; until then its
+traffic is allowed. So the payload carries an "egress gate": the trusted wrapper waits until a
+normally reachable address is blocked before it runs any untrusted code (sandbox/entrypoint.py).
+
 Known gaps vs Docker: emptyDir can't be mounted noexec, there is no per-pod open-files ulimit,
 and a network attempt with no socket timeout shows up as `timeout` (packets are dropped, not
 refused). See D20.
@@ -49,6 +53,9 @@ NAMESPACE = os.environ.get("EVALHARNESS_SANDBOX_NAMESPACE", "evalharness-sandbox
 # Images are loaded into the cluster by `make k8s-images`; never pull them from a registry.
 IMAGE_PULL_POLICY = os.environ.get("EVALHARNESS_SANDBOX_PULL_POLICY", "Never")
 POD_START_TIMEOUT_S = 60
+# How long the in-pod wrapper waits for the deny-all NetworkPolicy to take effect (D20).
+EGRESS_GATE_MAX_WAIT_S = 20
+_canary: tuple[str, int] | None = None
 
 
 def _kubectl(*args: str, timeout: float = 30) -> subprocess.CompletedProcess:
@@ -67,7 +74,9 @@ def pod_overrides(name: str, image: str, limits: SandboxLimits) -> dict:
             "restartPolicy": "Never",
             "automountServiceAccountToken": False,  # no Kubernetes API credential in the pod
             "enableServiceLinks": False,  # no env vars describing cluster services
-            "activeDeadlineSeconds": int(limits.timeout_s + STARTUP_GRACE_S + 30),
+            "activeDeadlineSeconds": int(
+                limits.timeout_s + STARTUP_GRACE_S + EGRESS_GATE_MAX_WAIT_S + 30
+            ),
             "terminationGracePeriodSeconds": 0,
             "hostname": "sandbox",
             # Name lookups go to a resolver that doesn't exist, so they fail at once.
@@ -129,6 +138,21 @@ def kubectl_run_args(name: str, image: str, limits: SandboxLimits, namespace: st
     ]
 
 
+def egress_canary() -> tuple[str, int]:
+    """The `kubernetes` Service address: reachable from any pod unless a policy blocks it."""
+    global _canary
+    if _canary is None:
+        r = _kubectl(
+            "get", "service", "kubernetes", "--namespace", "default",
+            "-o", "jsonpath={.spec.clusterIP} {.spec.ports[0].port}",
+        )  # fmt: skip
+        if r.returncode != 0:
+            raise RuntimeError(f"cannot find the kubernetes Service: {r.stderr.strip()[:300]}")
+        host, port = r.stdout.split()
+        _canary = (host, int(port))
+    return _canary
+
+
 def run_in_pod(
     files: dict[str, str],
     limits: SandboxLimits,
@@ -138,7 +162,15 @@ def run_in_pod(
     out = SandboxOutcome(image=image, backend="kubernetes", runtime=None, limits=limits.to_dict())
     name = f"evalh-{uuid.uuid4().hex[:12]}"
     nonce = secrets.token_hex(16)
-    payload = json.dumps({"files": files, "timeout_s": limits.timeout_s, "nonce": nonce}).encode()
+    try:
+        host, port = egress_canary()
+    except (RuntimeError, subprocess.TimeoutExpired, FileNotFoundError) as e:
+        out.harness_error = f"egress gate unavailable: {e}"
+        return out
+    gate = {"host": host, "port": port, "max_wait_s": EGRESS_GATE_MAX_WAIT_S}
+    payload = json.dumps(
+        {"files": files, "timeout_s": limits.timeout_s, "nonce": nonce, "egress_gate": gate}
+    ).encode()
     start = time.monotonic()
     try:
         proc = subprocess.Popen(
@@ -152,7 +184,8 @@ def run_in_pod(
         out.harness_error = "kubectl not found on PATH"
         return out
     try:
-        deadline = start + POD_START_TIMEOUT_S + limits.timeout_s + STARTUP_GRACE_S
+        budget = POD_START_TIMEOUT_S + EGRESS_GATE_MAX_WAIT_S + limits.timeout_s + STARTUP_GRACE_S
+        deadline = start + budget
         stdout, stderr, timed_out, exceeded = _bounded_communicate(proc, payload, deadline)
         if timed_out or exceeded:
             proc.kill()
