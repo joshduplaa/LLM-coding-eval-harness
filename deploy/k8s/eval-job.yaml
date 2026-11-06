@@ -1,0 +1,51 @@
+# One evaluation run in the cluster. Created fresh each time (generateName), so use
+#   kubectl create -f deploy/k8s/eval-job.yaml        (or: make k8s-eval)
+# The evaluator runs trusted harness code only; each sample's model output runs in its own
+# sandbox pod in evalharness-sandbox (D20). The model is the MOCK model: synthetic output.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: evalharness-run-
+  namespace: evalharness
+  labels: {app: evaluator}
+spec:
+  backoffLimit: 0  # a failed run is investigated, not silently retried into a different result
+  ttlSecondsAfterFinished: 3600
+  activeDeadlineSeconds: 1800
+  template:
+    metadata:
+      labels: {app: evaluator}
+    spec:
+      serviceAccountName: evaluator
+      restartPolicy: Never
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10002
+        runAsGroup: 10002
+        fsGroup: 10002
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: evaluator
+          image: evalharness-evaluator:0.4.0
+          imagePullPolicy: Never
+          args: [evalharness, run, --model, mock-mixed, --samples, "3", --seed, "1"]
+          env:
+            - {name: EVALHARNESS_SANDBOX_BACKEND, value: kubernetes}
+            - {name: EVALHARNESS_SANDBOX_IMAGE, value: "evalharness-sandbox:0.2.0"}
+            - {name: EVALHARNESS_SANDBOX_NAMESPACE, value: evalharness-sandbox}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: "1", memory: 384Mi}
+          volumeMounts:
+            - {name: results, mountPath: /data}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: results
+          persistentVolumeClaim: {claimName: results}
+        - name: tmp
+          emptyDir: {sizeLimit: 32Mi}

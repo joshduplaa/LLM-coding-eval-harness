@@ -66,8 +66,12 @@ jobs:
       - name: Build sandbox image
         run: docker build -t evalharness-sandbox:0.2.0 sandbox/
       - name: Build service image
-        run: docker build -t evalharness-service:0.3.0 .
+        run: docker build --target service -t evalharness-service:0.4.0 .
+      - name: Build evaluator image (service + checksum-verified kubectl)
+        run: docker build --target evaluator -t evalharness-evaluator:0.4.0 .
+      - name: Build evaluator image (service + checksum-verified kubectl)
+        run: docker build --target evaluator -t evalharness-evaluator:0.4.0 .
       - name: Smoke-test service image
-        run: scripts/smoke_service_image.sh evalharness-service:0.3.0
+        run: scripts/smoke_service_image.sh evalharness-service:0.4.0
       - name: Image sizes
         run: docker images --filter reference='evalharness-*'
