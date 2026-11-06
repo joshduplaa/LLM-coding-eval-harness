@@ -140,3 +140,35 @@ uncertainty is wider than the printed interval. The report says so.
   call it in-process with `TestClient`, with no real network.
 - Binding to `127.0.0.1` means only this machine can connect; `0.0.0.0` would expose it to the
   network. Default to the narrow one.
+
+## Milestone 3
+
+### Docker images, layers, and multi-stage builds
+- An **image** is a stack of read-only **layers**, one per `RUN`/`COPY` instruction. Docker
+  caches each layer and reuses it if the instruction and its inputs haven't changed. That's why
+  the service `Dockerfile` copies `pyproject.toml` + `uv.lock` and installs dependencies
+  *before* copying `src/`: editing code doesn't reinstall every package.
+- **Multi-stage:** the first `FROM … AS build` stage has the tools (uv). The final stage starts
+  fresh and `COPY --from=build` takes only the result. Tools left out of the final image can't
+  be used by an attacker who gets in, and the image is smaller (136 MB here).
+- **Tag vs digest:** `python:3.12-slim` is a movable label; `@sha256:4840…` is the content hash
+  of one exact image. Pinning by digest is the image version of a lockfile.
+- **Build context:** `docker build .` sends the directory to the Docker daemon first.
+  `.dockerignore` decides what gets sent, so it's the first line of defense against secrets
+  ending up in an image layer. Once a file is in a layer, deleting it in a later layer doesn't
+  remove it from the image.
+- **HEALTHCHECK:** a command Docker runs periodically inside the container. `docker inspect`
+  then reports `healthy`/`unhealthy`. Kubernetes has the same idea as readiness/liveness probes
+  (Milestone 4).
+
+### GitHub Actions basics
+- A **workflow** (`.github/workflows/*.yml`) runs on **events** (`push`, `pull_request`,
+  `workflow_dispatch` = a manual button). It has **jobs**, which run in parallel on fresh VMs
+  (**runners**), and each job has **steps**: shell commands (`run:`) or reusable **actions**
+  (`uses:`).
+- `GITHUB_TOKEN` is a temporary credential each run gets automatically. `permissions:` sets what
+  it can do. Default to `contents: read` and add only what a job needs.
+- `uses: owner/repo@<40-char SHA>` runs exactly that code. `@v7` runs whatever the tag points
+  to *today*.
+- `concurrency` with `cancel-in-progress` stops an older run on the same branch when you push
+  again, which saves minutes and avoids confusing results.

@@ -5,7 +5,7 @@ records reproducible, categorized results. The goal is to package it with Docker
 Terraform, deploy it through GitHub Actions, and monitor pass rates with Grafana. Those parts are
 built milestone by milestone; see [docs/PLAN.md](docs/PLAN.md).
 
-> **Status: Milestones 1–2 (core harness; results, metrics, read-only API).** Only a **mock model** exists. Every result it produces
+> **Status: Milestones 1–3 (core harness; results, metrics, read-only API; images and CI).** Only a **mock model** exists. Every result it produces
 > is synthetic and labeled `MOCK`. It is not a measurement of any real model.
 
 ## Quick start
@@ -24,7 +24,19 @@ uv run evalharness report <run_id>              # the report again; --json for m
 uv run evalharness serve                        # read-only API at http://127.0.0.1:8000/docs
 make test             # 101 tests, including adversarial sandbox tests
 make test-gvisor      # the same suite with every sandbox under gVisor (if installed)
+make ci               # everything CI runs: lint, workflow lint, both images, tests, smoke test
 ```
+
+**Service image** (read-only API; never runs model code):
+
+```bash
+make service-image
+docker run --rm -p 127.0.0.1:8000:8000 -v evalharness-data:/data evalharness-service:0.1.0
+```
+
+**CI** (`.github/workflows/ci.yml`) runs lint, the full test suite including the adversarial
+sandbox tests, and both image builds plus a smoke test on every push. It uses no secrets and
+deploys nothing.
 
 The harness uses whichever Docker daemon your CLI points at. If `docker info` fails because your
 active context isn't running (for example Docker Desktop is stopped), switch with
