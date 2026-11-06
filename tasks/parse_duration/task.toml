@@ -1,0 +1,12 @@
+id = "parse_duration"
+version = "1.0.0"
+title = "Parse a duration string"
+entry_point = "parse_duration"
+signature = "def parse_duration(spec: str) -> int:"
+timeout_s = 10
+description = """
+Convert a duration like "1h30m15s" into a whole number of seconds. The string is one or more
+<digits><unit> parts, with units h (hours), m (minutes) and s (seconds). Units must appear in that
+order, each at most once, with no spaces or signs. Examples: "45s" -> 45, "2h" -> 7200,
+"1h30m15s" -> 5415. Raise ValueError for anything else, including "", "10", "5m1h", "1h1h" and "1d".
+"""

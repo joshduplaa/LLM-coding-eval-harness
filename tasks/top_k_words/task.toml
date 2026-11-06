@@ -1,0 +1,12 @@
+id = "top_k_words"
+version = "1.0.0"
+title = "Top-k frequent words"
+entry_point = "top_k_words"
+signature = "def top_k_words(text: str, k: int) -> list[str]:"
+timeout_s = 10
+description = """
+Split the text into words, where a word is a maximal run of ASCII letters (a-z, A-Z). Compare
+words case-insensitively and return them in lowercase. Return the k most frequent words, ordered
+by descending count; break ties alphabetically. If there are fewer than k distinct words, return
+all of them. k is always >= 0.
+"""
