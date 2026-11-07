@@ -212,7 +212,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("runs", help="list stored runs").set_defaults(fn=cmd_runs)
 
-    rp = sub.add_parser("report", help="pass rates with sample sizes and 95% intervals")
+    rp = sub.add_parser("report", help="pass rates with sample sizes and 95%% intervals")
     rp.add_argument("run_id")
     rp.add_argument("--json", action="store_true", help="machine-readable output")
     rp.set_defaults(fn=cmd_report)
