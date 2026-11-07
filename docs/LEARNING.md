@@ -243,3 +243,32 @@ uncertainty is wider than the printed interval. The report says so.
 Instead of storing a cloud password in GitHub, Azure is told "trust tokens that GitHub signs for
 *this repo* and *this environment*". Each run gets a short-lived signed token, trades it for
 Azure access, and the access expires on its own. There's nothing long-lived to leak.
+
+## Milestone 6
+
+### Choosing a benchmark
+- **Benchmark:** a fixed set of tasks with tests, so different runs are comparable. HumanEval
+  (164 Python functions) and MBPP (~1,000 short problems) are the classics. **HumanEval+** and
+  **MBPP+** (EvalPlus) are the same problems with many more tests, so fewer wrong solutions pass.
+- **Contamination:** if a benchmark's problems and answers were on the public web before a
+  model was trained, the model may have memorized them. A high score then partly measures
+  memory. Older benchmarks are almost certainly contaminated, so any published number must say so.
+- **Licenses in one line each:** MIT and Apache-2.0 let you reuse and redistribute with
+  attribution and the license text. CC-BY-4.0 also needs attribution. A bare "cc" tag doesn't
+  say which Creative Commons license applies, so you can't rely on it. And problems copied from
+  a site like LeetCode carry that site's terms too.
+
+### Spending limits, in layers
+- **Provider limit:** a monthly cap set in the provider's console. It holds even if your code
+  has a bug, so it's the backstop.
+- **Harness guard:** before each request, add the worst-case cost (input tokens plus
+  `max_tokens`, times the price) to the running total, and stop cleanly if it would pass the
+  cap. A stopped run is marked incomplete, never reported as final.
+- **Staged spending:** a tiny shakedown run first, then one model, then the rest, each approved
+  separately.
+- **Cloud budgets:** an alert at a dollar amount on the resource group. An alert warns; it
+  doesn't stop anything. `terraform destroy` is what actually stops the bill.
+
+### Docs are code too
+A README is only accurate if someone runs it. Running the quickstart from scratch found a real
+bug (`evalharness --help` crashed) that 130 tests had missed, because no test ran `--help`.

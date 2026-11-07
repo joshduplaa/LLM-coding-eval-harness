@@ -57,7 +57,7 @@ counted as a model failure.
 5. **Infrastructure draft.** *(Done: D22–D23.)* Terraform for Azure (AKS with a Kata sandbox
    pool), checked only with `terraform fmt`, `validate`, and offline `terraform test`. Includes a
    deploy workflow that is disabled by default. Nothing has been applied.
-6. **Handoff.** An accurate README covering setup, architecture, security limits, and known gaps,
+6. **Handoff.** *(Done: README rewritten and checked against the code; docs/DECISION_BRIEF.md.)* An accurate README covering setup, architecture, security limits, and known gaps,
    plus the decision brief.
 
 ## Out of scope unless needed
