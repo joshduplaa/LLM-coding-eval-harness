@@ -5,6 +5,7 @@ Standard on both namespaces; these tests catch mistakes before anything is appli
 """
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -112,3 +113,37 @@ def test_dashboard_is_generated_and_labels_mock_data(tmp_path):
         if "evalharness_pass_rate" in e:
             assert "ci_low" in e and "ci_high" in e, p["title"]
     assert any("is_mock" in x for x in exprs)
+
+
+@pytest.mark.skipif(not shutil.which("kubectl"), reason="needs kubectl to render the overlay")
+def test_aks_overlay_keeps_every_lockdown_setting():
+    out = subprocess.run(
+        ["kubectl", "kustomize", str(ROOT / "deploy" / "aks")],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    docs = [d for d in yaml.safe_load_all(out) if d]
+    pods = {
+        d["metadata"]["name"]: d["spec"]["template"]["spec"]
+        for d in docs
+        if d["kind"] == "Deployment"
+    }
+    assert set(pods) == {"evalharness-service", "prometheus", "grafana"}
+    for spec in pods.values():
+        assert spec["securityContext"]["runAsNonRoot"] is True
+        for c in spec["containers"]:
+            assert c["securityContext"]["readOnlyRootFilesystem"] is True
+            assert c["securityContext"]["capabilities"] == {"drop": ["ALL"]}
+            assert c["imagePullPolicy"] != "Never"  # AKS pulls from the registry
+    cfg = next(
+        d for d in docs if d["kind"] == "ConfigMap" and d["metadata"]["name"] == "evaluator-config"
+    )
+    assert cfg["data"]["EVALHARNESS_SANDBOX_NODE_POOL"] == "sandbox"
+    assert cfg["data"]["EVALHARNESS_SANDBOX_RUNTIME_CLASS"]
+    sandbox_ns = next(
+        d
+        for d in docs
+        if d["kind"] == "Namespace" and d["metadata"]["name"] == "evalharness-sandbox"
+    )
+    assert sandbox_ns["metadata"]["labels"]["pod-security.kubernetes.io/enforce"] == "restricted"

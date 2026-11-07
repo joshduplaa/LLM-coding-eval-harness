@@ -27,13 +27,11 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: evaluator
-          image: evalharness-evaluator:0.4.1
+          image: evalharness-evaluator:0.5.0
           imagePullPolicy: Never
           args: [evalharness, run, --model, mock-mixed, --samples, "3", --seed, "1"]
-          env:
-            - {name: EVALHARNESS_SANDBOX_BACKEND, value: kubernetes}
-            - {name: EVALHARNESS_SANDBOX_IMAGE, value: "evalharness-sandbox:0.2.0"}
-            - {name: EVALHARNESS_SANDBOX_NAMESPACE, value: evalharness-sandbox}
+          envFrom:
+            - configMapRef: {name: evaluator-config}  # evaluator-config.yaml (per-cluster values)
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

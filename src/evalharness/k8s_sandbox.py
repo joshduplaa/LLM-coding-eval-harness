@@ -52,6 +52,13 @@ from .sandbox import (
 NAMESPACE = os.environ.get("EVALHARNESS_SANDBOX_NAMESPACE", "evalharness-sandbox")
 # Images are loaded into the cluster by `make k8s-images`; never pull them from a registry.
 IMAGE_PULL_POLICY = os.environ.get("EVALHARNESS_SANDBOX_PULL_POLICY", "Never")
+# Optional, for clusters with a dedicated sandbox node pool (infra/azure, D22). Unset on kind.
+#   RUNTIME_CLASS: e.g. AKS Pod Sandboxing's Kata class, so each pod gets its own small VM
+#   NODE_POOL:     schedule only onto nodes labelled evalharness.io/pool=<value>, tolerating
+#                  the evalharness.io/sandbox taint that keeps every other pod off them
+RUNTIME_CLASS = os.environ.get("EVALHARNESS_SANDBOX_RUNTIME_CLASS") or None
+NODE_POOL = os.environ.get("EVALHARNESS_SANDBOX_NODE_POOL") or None
+SANDBOX_TAINT_KEY = "evalharness.io/sandbox"
 POD_START_TIMEOUT_S = 60
 # How long the in-pod wrapper waits for the deny-all NetworkPolicy to take effect (D20).
 EGRESS_GATE_MAX_WAIT_S = 20
@@ -67,56 +74,66 @@ def _kubectl(*args: str, timeout: float = 30) -> subprocess.CompletedProcess:
 def pod_overrides(name: str, image: str, limits: SandboxLimits) -> dict:
     uid, gid = (int(x) for x in SANDBOX_UID.split(":"))
     resources = {"cpu": str(limits.cpus), "memory": f"{limits.memory_mb}Mi"}
+    spec = _base_spec(name, image, limits, uid, gid, resources)
+    if RUNTIME_CLASS:
+        spec["runtimeClassName"] = RUNTIME_CLASS
+    if NODE_POOL:
+        spec["nodeSelector"] = {"evalharness.io/pool": NODE_POOL}
+        spec["tolerations"] = [
+            {"key": SANDBOX_TAINT_KEY, "operator": "Equal", "value": "true", "effect": "NoSchedule"}
+        ]
+    return {"apiVersion": "v1", "metadata": {"labels": {"evalharness": "sandbox"}}, "spec": spec}
+
+
+def _base_spec(
+    name: str, image: str, limits: SandboxLimits, uid: int, gid: int, resources: dict
+) -> dict:
     return {
-        "apiVersion": "v1",
-        "metadata": {"labels": {"evalharness": "sandbox"}},
-        "spec": {
-            "restartPolicy": "Never",
-            "automountServiceAccountToken": False,  # no Kubernetes API credential in the pod
-            "enableServiceLinks": False,  # no env vars describing cluster services
-            "activeDeadlineSeconds": int(
-                limits.timeout_s + STARTUP_GRACE_S + EGRESS_GATE_MAX_WAIT_S + 30
-            ),
-            "terminationGracePeriodSeconds": 0,
-            "hostname": "sandbox",
-            # Name lookups go to a resolver that doesn't exist, so they fail at once.
-            "dnsPolicy": "None",
-            "dnsConfig": {"nameservers": ["127.0.0.1"]},
-            "securityContext": {
-                "runAsNonRoot": True,
-                "runAsUser": uid,
-                "runAsGroup": gid,
-                "seccompProfile": {"type": "RuntimeDefault"},
-            },
-            "containers": [
-                {
-                    "name": name,
-                    "image": image,
-                    "imagePullPolicy": IMAGE_PULL_POLICY,
-                    "stdin": True,
-                    "stdinOnce": True,  # stdin closes after our one write: the wrapper sees EOF
-                    "tty": False,
-                    "securityContext": {
-                        "allowPrivilegeEscalation": False,
-                        "readOnlyRootFilesystem": True,
-                        "privileged": False,
-                        "capabilities": {"drop": ["ALL"]},
-                    },
-                    "resources": {"limits": resources, "requests": resources},
-                    "volumeMounts": [
-                        {"name": "tmp", "mountPath": "/tmp"},  # noqa: S108 - in-pod path
-                        {"name": "out", "mountPath": "/harness-out"},
-                    ],
-                }
-            ],
-            "volumes": [
-                {
-                    "name": "tmp",
-                    "emptyDir": {"medium": "Memory", "sizeLimit": f"{limits.tmpfs_mb}Mi"},
-                },
-                {"name": "out", "emptyDir": {"medium": "Memory", "sizeLimit": "1Mi"}},
-            ],
+        "restartPolicy": "Never",
+        "automountServiceAccountToken": False,  # no Kubernetes API credential in the pod
+        "enableServiceLinks": False,  # no env vars describing cluster services
+        "activeDeadlineSeconds": int(
+            limits.timeout_s + STARTUP_GRACE_S + EGRESS_GATE_MAX_WAIT_S + 30
+        ),
+        "terminationGracePeriodSeconds": 0,
+        "hostname": "sandbox",
+        # Name lookups go to a resolver that doesn't exist, so they fail at once.
+        "dnsPolicy": "None",
+        "dnsConfig": {"nameservers": ["127.0.0.1"]},
+        "securityContext": {
+            "runAsNonRoot": True,
+            "runAsUser": uid,
+            "runAsGroup": gid,
+            "seccompProfile": {"type": "RuntimeDefault"},
         },
+        "containers": [
+            {
+                "name": name,
+                "image": image,
+                "imagePullPolicy": IMAGE_PULL_POLICY,
+                "stdin": True,
+                "stdinOnce": True,  # stdin closes after our one write: the wrapper sees EOF
+                "tty": False,
+                "securityContext": {
+                    "allowPrivilegeEscalation": False,
+                    "readOnlyRootFilesystem": True,
+                    "privileged": False,
+                    "capabilities": {"drop": ["ALL"]},
+                },
+                "resources": {"limits": resources, "requests": resources},
+                "volumeMounts": [
+                    {"name": "tmp", "mountPath": "/tmp"},  # noqa: S108 - in-pod path
+                    {"name": "out", "mountPath": "/harness-out"},
+                ],
+            }
+        ],
+        "volumes": [
+            {
+                "name": "tmp",
+                "emptyDir": {"medium": "Memory", "sizeLimit": f"{limits.tmpfs_mb}Mi"},
+            },
+            {"name": "out", "emptyDir": {"medium": "Memory", "sizeLimit": "1Mi"}},
+        ],
     }
 
 

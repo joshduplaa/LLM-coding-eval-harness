@@ -88,3 +88,28 @@ def test_pod_deadline_covers_the_gate():
 
     spec = pod_overrides("p", "img:1", LIMITS)["spec"]
     assert spec["activeDeadlineSeconds"] > LIMITS.timeout_s + EGRESS_GATE_MAX_WAIT_S
+
+
+def test_dedicated_sandbox_pool_and_runtime_class_are_opt_in(monkeypatch):
+    from evalharness import k8s_sandbox
+
+    plain = pod_overrides("p", "img:1", LIMITS)["spec"]
+    assert "runtimeClassName" not in plain and "nodeSelector" not in plain
+    assert "tolerations" not in plain
+
+    monkeypatch.setattr(k8s_sandbox, "RUNTIME_CLASS", "kata-vm-isolation")
+    monkeypatch.setattr(k8s_sandbox, "NODE_POOL", "sandbox")
+    spec = k8s_sandbox.pod_overrides("p", "img:1", LIMITS)["spec"]
+    assert spec["runtimeClassName"] == "kata-vm-isolation"
+    assert spec["nodeSelector"] == {"evalharness.io/pool": "sandbox"}
+    (tol,) = spec["tolerations"]
+    # Tolerates exactly the sandbox taint from infra/azure, not every taint.
+    assert tol == {
+        "key": "evalharness.io/sandbox",
+        "operator": "Equal",
+        "value": "true",
+        "effect": "NoSchedule",
+    }
+    # The hardening is unchanged.
+    assert spec["securityContext"] == plain["securityContext"]
+    assert spec["containers"] == plain["containers"]
