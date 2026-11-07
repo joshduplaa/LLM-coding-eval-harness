@@ -23,7 +23,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: api
-          image: evalharness-service:0.4.0
+          image: evalharness-service:0.4.1
           imagePullPolicy: Never  # loaded into kind by `make k8s-images`
           ports: [{containerPort: 8000, name: http}]
           securityContext:

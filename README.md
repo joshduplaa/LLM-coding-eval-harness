@@ -31,7 +31,7 @@ make ci               # everything CI runs: lint, workflow lint, both images, te
 
 ```bash
 make service-image
-docker run --rm -p 127.0.0.1:8000:8000 -v evalharness-data:/data evalharness-service:0.4.0
+docker run --rm -p 127.0.0.1:8000:8000 -v evalharness-data:/data evalharness-service:0.4.1
 ```
 
 **Local Kubernetes + dashboard** (kind; nothing leaves your laptop, needs `kind` and `kubectl`):

@@ -27,7 +27,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: evaluator
-          image: evalharness-evaluator:0.4.0
+          image: evalharness-evaluator:0.4.1
           imagePullPolicy: Never
           args: [evalharness, run, --model, mock-mixed, --samples, "3", --seed, "1"]
           env:
