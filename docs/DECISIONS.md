@@ -318,6 +318,10 @@ window entirely and is the better choice for a real cluster.
   be edited from the UI (it's provisioned from `scripts/gen_dashboard.py`). Reached only by
   `make dashboard` (port-forward to 127.0.0.1). Update checks, plugin downloads, and avatars
   are off, and a NetworkPolicy lets Grafana talk only to Prometheus and DNS.
+- **Grafana memory: 1Gi limit.** The first limit (384Mi) got Grafana OOM-killed during the
+  first hands-on session: Grafana 13 builds in-memory search indexes, and measured use after a
+  few dashboard loads was ~560Mi. When it restarted, `make dashboard` (a port-forward to one
+  pod) dropped too. Lesson: size limits from measurement, not guesses.
 - **Dashboard rules:** a rate is never shown without its 95% interval and `n`; harness errors
   appear next to it; `is_mock` is a column on every table, a counter of mock models is shown in
   red, and the title and banner say MOCK DATA. Only "passed" is colored green.
