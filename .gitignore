@@ -25,3 +25,14 @@ results/
 .vscode/
 .idea/
 .DS_Store
+
+# Terraform: provider cache, state (can contain secrets), and real variable values
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+*.tfvars
+!*.tfvars.example
+.terraformrc
+terraform.rc

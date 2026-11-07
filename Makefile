@@ -1,8 +1,8 @@
 # Convenience targets. Docker commands use your active context (`docker context show`).
 SANDBOX_IMAGE ?= evalharness-sandbox:0.2.0
-SERVICE_IMAGE ?= evalharness-service:0.4.1
+SERVICE_IMAGE ?= evalharness-service:0.5.0
 
-.PHONY: cluster-up cluster-down evaluator-image k8s-images deploy k8s-eval dashboard test-k8s install sandbox-image service-image images smoke ci lint lint-workflows format test test-unit test-gvisor validate demo
+.PHONY: tf-check cluster-up cluster-down evaluator-image k8s-images deploy k8s-eval dashboard test-k8s install sandbox-image service-image images smoke ci lint lint-workflows format test test-unit test-gvisor validate demo
 
 install:            ## create .venv and install the package + dev tools
 	uv sync
@@ -18,7 +18,7 @@ images: sandbox-image service-image evaluator-image
 smoke: service-image ## start the service image and check it from outside
 	scripts/smoke_service_image.sh $(SERVICE_IMAGE)
 
-ci: lint lint-workflows images test smoke ## everything the GitHub Actions workflow runs
+ci: lint lint-workflows tf-check images test smoke ## everything the GitHub Actions workflow runs
 
 lint-workflows:     ## check .github/workflows with actionlint (pinned image)
 	docker run --rm -v "$$PWD:/repo:ro" -w /repo rhysd/actionlint:1.7.12 -color=false
@@ -48,7 +48,7 @@ demo:               ## one end-to-end run with the mixed mock model
 
 # ---- Milestone 4: local Kubernetes (kind) ----
 CLUSTER ?= evalharness
-EVALUATOR_IMAGE ?= evalharness-evaluator:0.4.1
+EVALUATOR_IMAGE ?= evalharness-evaluator:0.5.0
 KCTX := --context kind-$(CLUSTER)
 
 cluster-up:         ## create the local kind cluster (no cloud resources)
@@ -77,3 +77,9 @@ dashboard:          ## Grafana on http://127.0.0.1:3000 (anonymous, read-only); 
 
 test-k8s:           ## the adversarial sandbox suite with every sample in a kind pod
 	EVALHARNESS_SANDBOX_BACKEND=kubernetes uv run pytest -q tests/test_sandbox_security.py tests/test_k8s_sandbox.py
+
+# ---- Milestone 5: Terraform (static checks only; never applies anything) ----
+tf-check:           ## terraform fmt, validate, and offline tests for infra/azure (no cloud, no cost)
+	cd infra/azure && terraform fmt -check -recursive && \
+	terraform init -backend=false -input=false -lockfile=readonly >/dev/null && \
+	terraform validate && terraform test

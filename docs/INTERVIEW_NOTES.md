@@ -136,3 +136,22 @@ A login means a credential to create, store, rotate, and possibly leak. The dash
 read-only and reached only by port-forward to localhost, so anonymous Viewer with no login
 form, no basic auth, and no admin user removes the credential entirely. The dashboard is
 provisioned from code, so nobody needs to edit it in the UI.
+
+### 20. "How do you test Terraform without deploying it?"
+Three layers. `fmt` and `validate` catch syntax and type errors. `terraform test` with a mock
+provider plans against fake Azure responses, so I can assert security settings: no local
+accounts, Kata on the sandbox pool, an API allowlist that rejects `0.0.0.0/0`. And I proved the
+tests catch regressions by breaking two settings on purpose and watching them fail. All of it
+runs in CI with no credentials.
+
+### 21. "How does your pipeline authenticate to the cloud?"
+It doesn't store a credential. The deploy workflow uses GitHub OIDC: Azure trusts short-lived
+tokens GitHub signs for this repository and environment. It's also disabled three ways (manual
+trigger only, a repository variable, and an environment with required reviewers), and defaults
+to `plan`.
+
+### 22. "Why a separate node pool for untrusted code?"
+Blast radius. Even with locked-down pods, untrusted code shares a kernel with whatever runs on
+the same node. A tainted sandbox pool keeps trusted services off those machines, and Kata gives
+each sandbox pod its own kernel. If the Kata runtime is missing, the sample fails closed as a
+harness error instead of running with weaker isolation.

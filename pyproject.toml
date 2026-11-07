@@ -1,6 +1,6 @@
 [project]
 name = "evalharness"
-version = "0.4.1"
+version = "0.5.0"
 description = "Run model-generated code against test suites in a locked-down sandbox and record reproducible results."
 readme = "README.md"
 requires-python = ">=3.12"

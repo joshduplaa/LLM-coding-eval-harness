@@ -1,0 +1,12 @@
+# Settings for the evaluator Job (eval-job.yaml reads them with envFrom). The AKS overlay
+# (deploy/aks) replaces these values; kind uses them as they are.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: evaluator-config
+  namespace: evalharness
+data:
+  EVALHARNESS_SANDBOX_BACKEND: kubernetes
+  EVALHARNESS_SANDBOX_IMAGE: "evalharness-sandbox:0.2.0"
+  EVALHARNESS_SANDBOX_NAMESPACE: evalharness-sandbox
+  EVALHARNESS_SANDBOX_PULL_POLICY: Never  # images are loaded into kind, never pulled

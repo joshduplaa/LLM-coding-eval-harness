@@ -2,7 +2,7 @@
 # Start the service image and check it from the outside. Used by CI and `make smoke`.
 # Usage: scripts/smoke_service_image.sh [image]
 set -euo pipefail
-IMAGE="${1:-evalharness-service:0.4.1}"
+IMAGE="${1:-evalharness-service:0.5.0}"
 NAME="evalharness-smoke-$$"
 PORT="${SMOKE_PORT:-18000}"
 
