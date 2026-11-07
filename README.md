@@ -5,7 +5,7 @@ records reproducible, categorized results. The goal is to package it with Docker
 Terraform, deploy it through GitHub Actions, and monitor pass rates with Grafana. Those parts are
 built milestone by milestone; see [docs/PLAN.md](docs/PLAN.md).
 
-> **Status: Milestones 1–4 (core harness; results, metrics, read-only API; images and CI; local Kubernetes with Prometheus and Grafana).** Only a **mock model** exists. Every result it produces
+> **Status: Milestones 1–5 (core harness; results, metrics, read-only API; images and CI; local Kubernetes with Prometheus and Grafana; Azure Terraform draft, never applied).** Only a **mock model** exists. Every result it produces
 > is synthetic and labeled `MOCK`. It is not a measurement of any real model.
 
 ## Quick start
@@ -31,7 +31,7 @@ make ci               # everything CI runs: lint, workflow lint, both images, te
 
 ```bash
 make service-image
-docker run --rm -p 127.0.0.1:8000:8000 -v evalharness-data:/data evalharness-service:0.4.1
+docker run --rm -p 127.0.0.1:8000:8000 -v evalharness-data:/data evalharness-service:0.5.0
 ```
 
 **Local Kubernetes + dashboard** (kind; nothing leaves your laptop, needs `kind` and `kubectl`):
@@ -48,6 +48,16 @@ make cluster-down
 
 *Screenshot of mock data: synthetic output from `mock-mixed`, not a model result.* How the
 Kubernetes sandbox works and where it is weaker than Docker: D20.
+
+**Azure draft** (`infra/azure`, Terraform; checked, **never applied**):
+
+```bash
+make tf-check    # terraform fmt + validate + offline tests (mock provider: no account, no cost)
+```
+
+AKS with a separate, tainted sandbox node pool where each sandbox pod runs in its own VM (Kata),
+Entra ID-only access, and an IP-restricted API. `.github/workflows/deploy.yml` can deploy it but
+is **disabled by default** and uses OIDC (no stored secrets). See D22–D23 before enabling.
 
 **CI** (`.github/workflows/ci.yml`) runs lint, the full test suite including the adversarial
 sandbox tests, and both image builds plus a smoke test on every push. It uses no secrets and

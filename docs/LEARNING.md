@@ -211,3 +211,35 @@ uncertainty is wider than the printed interval. The report says so.
   for example `max by (model_id) (evalharness_pass_rate{task="_all"})`.
 - **Grafana** draws dashboards from queries. **Provisioning** loads data sources and dashboards
   from files at startup, so the dashboard lives in Git, not in someone's browser session.
+
+## Milestone 5
+
+### Terraform in one page
+- You describe the infrastructure you want in `.tf` files. Terraform compares that with what
+  exists and works out the changes.
+- **Provider:** the plugin that talks to one platform (`azurerm` for Azure). **Resource:** one
+  thing to manage (a cluster, a registry). **Variable / output:** inputs and results.
+- **State:** Terraform's record of what it created. It can contain sensitive values, so it is
+  never committed. Teams keep it in remote storage with locking.
+- **`init`** downloads providers. **`fmt`** formats. **`validate`** checks the code is consistent
+  without touching any cloud. **`plan`** asks the cloud what would change (needs credentials).
+  **`apply`** makes the changes (creates billable resources). This project stops at `validate`
+  and offline `test`.
+- **Lock file** (`.terraform.lock.hcl`): exact provider versions plus checksums, like `uv.lock`.
+- **`terraform test` with `mock_provider`:** runs a plan against fake responses, so you can
+  assert on settings ("local accounts are disabled") with no account and no cost.
+
+### Azure pieces used
+- **AKS:** Azure's managed Kubernetes. Azure runs the control plane; you pay for the nodes.
+- **Node pool:** a group of identical VMs. A **taint** keeps pods off unless they **tolerate**
+  it; a **node selector** pins pods to labeled nodes. Together they reserve the sandbox pool.
+- **Pod Sandboxing (Kata):** each pod runs in its own lightweight VM, with a separate kernel per
+  pod. Selected by a pod's `runtimeClassName`.
+- **Entra ID:** Azure's identity system (formerly Azure AD). **Managed identity:** an identity
+  Azure gives a resource, so it needs no password.
+- **ACR:** Azure's private container registry.
+
+### OIDC for CI, in plain terms
+Instead of storing a cloud password in GitHub, Azure is told "trust tokens that GitHub signs for
+*this repo* and *this environment*". Each run gets a short-lived signed token, trades it for
+Azure access, and the access expires on its own. There's nothing long-lived to leak.

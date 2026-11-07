@@ -54,8 +54,9 @@ counted as a model failure.
 4. **Local deployment and monitoring.** *(Done: D20–D21.)* kind cluster, Prometheus metrics
    endpoint, and a Grafana dashboard. Sandboxes in Kubernetes: one locked-down pod per sample
    (option C), started by an evaluator Job whose RBAC only covers the sandbox namespace.
-5. **Infrastructure draft.** Terraform for a provisional target, checked only with
-   `terraform fmt` and `terraform validate`. Includes a deploy workflow that is disabled by default.
+5. **Infrastructure draft.** *(Done: D22–D23.)* Terraform for Azure (AKS with a Kata sandbox
+   pool), checked only with `terraform fmt`, `validate`, and offline `terraform test`. Includes a
+   deploy workflow that is disabled by default. Nothing has been applied.
 6. **Handoff.** An accurate README covering setup, architecture, security limits, and known gaps,
    plus the decision brief.
 

@@ -297,6 +297,13 @@ window entirely and is the better choice for a real cluster.
   `ssl.py` with a network error *are* classified as violations.
 - Agreement check: the same mock run (seed 1, 15 samples) gave identical categories on both
   backends.
+- **The evaluator itself is trusted, and a compromise of it is not contained the same way.**
+  RBAC limits what a hijacked evaluator can do to the *cluster* (only sandbox pods; no
+  Secrets, other namespaces, NetworkPolicies, or RBAC changes), but it writes the results
+  database and its egress is open (it must reach the Kubernetes API), so it could forge results
+  or send data out. That's why model code never runs in the evaluator. Next steps if this mattered
+  more: an egress policy limited to the API server, and results signed inside each sandbox so the
+  evaluator can't forge them.
 
 ### D21. Local Kubernetes choices
 - **kind, one node.** A real Kubernetes API with real admission control, NetworkPolicy, and
@@ -330,3 +337,73 @@ window entirely and is the better choice for a real cluster.
   reach the Kubernetes API, and it runs only trusted harness code.
 - **Versions:** package and service/evaluator images 0.4.0; sandbox image 0.2.0 (wrapper gained
   the egress gate; plugin records exception origin).
+
+### D22. Infrastructure draft: Azure (AKS) with Terraform, checked but never applied
+**Scope (brief, Milestone 5).** A provisional cloud target written as Terraform in
+`infra/azure`, checked only with `terraform fmt`, `terraform validate`, and offline
+`terraform test`. Nothing has been created; no Azure account or credentials were used.
+
+**Why Azure:** Joshua's choice; it matches his AKS experience at ResMed.
+
+**What it describes:**
+- Resource group, VNet and node subnet, and a container registry with its admin user off.
+- An AKS cluster on the Free tier with three node pools:
+  - `system` (Kubernetes' own components only)
+  - `apps` (API, evaluator, Prometheus, Grafana)
+  - `sandbox`: tainted so only sandbox pods land there, scales to zero, at most 2 nodes, process
+    cap 256 per pod (same as kind), and **Pod Sandboxing** (`KataVmIsolation`), so each sandbox
+    pod runs in its own small VM. That's the AKS counterpart to gVisor (D13).
+- Access through Entra ID and Azure RBAC only: local accounts are disabled, so there's no static
+  admin kubeconfig. The Kubernetes API is reachable only from listed IP ranges, and a validation
+  rejects `0.0.0.0/0` or an empty list.
+- Cilium as the NetworkPolicy engine. The in-pod egress gate stays on anyway (D20).
+- User-assigned identities: the nodes' identity gets `AcrPull` *before* the cluster exists,
+  avoiding a first-pull race. No kubeconfig or other secret is a Terraform output.
+- Provider pinned exactly (`azurerm 5.11.0`) with checksums for four platforms in
+  `.terraform.lock.hcl`. Terraform 1.17.1 was verified by HashiCorp's GPG signature and SHA-256.
+- State is local by default. A real deployment keeps it in Azure Storage, configured at
+  `init` time by the deploy workflow (no names or keys in code). State and `*.tfvars` are
+  git-ignored.
+
+**How it's checked without a cloud:** `terraform test` with a **mock provider** plans against
+fake Azure responses. Assertions cover local accounts, Azure RBAC, the network policy engine,
+the API allowlist, the registry admin user, the sandbox pool's Kata runtime, taint, process
+cap, and scaling, plus that an open or empty API allowlist is rejected. A mutation check (turn
+local accounts back on, swap Kata for plain containers) made the tests fail as intended.
+
+**How the app follows the infra:** two opt-in sandbox settings, `EVALHARNESS_SANDBOX_NODE_POOL`
+(node selector plus a toleration for exactly the sandbox taint) and
+`EVALHARNESS_SANDBOX_RUNTIME_CLASS`, read from a ConfigMap that the AKS overlay (`deploy/aks`)
+fills in. Checked on kind: a pod with a missing RuntimeClass is refused, and the sample becomes a
+`harness_error`. If Kata isn't there, model code doesn't run unsandboxed.
+
+**Known gaps (not fixed, since nothing is deployed):**
+- The RuntimeClass name (`kata-vm-isolation`) must be confirmed with `kubectl get runtimeclass`
+  on a real cluster. A wrong name fails closed.
+- Results live in SQLite on a ReadWriteOnce disk shared by the API and the evaluator. That's fine
+  on one kind node, but on AKS the two pods could land on different nodes. A managed database is
+  the real fix (decision brief, M6).
+- No cost estimate has been checked against Azure pricing. Rough shape: three small node pools,
+  with the sandbox pool at zero when idle, plus a Standard registry. Check the Azure pricing
+  calculator before any `apply`.
+- No policy scanner (tfsec, checkov) in CI yet.
+
+### D23. The deploy workflow is disabled by default
+`.github/workflows/deploy.yml` deploys `infra/azure` plus `deploy/aks`, but it is off in three
+independent ways:
+1. It only runs when someone presses **Run workflow** (`workflow_dispatch`), never on push.
+2. Every job is skipped unless the repository variable `EVALHARNESS_DEPLOY_ENABLED` is `true`.
+3. Jobs run in the `azure` environment, which should get required reviewers before enabling.
+
+Even then, the default action is `plan` (shows changes, makes none). `apply` must be chosen
+explicitly.
+
+**No stored secrets:** it signs in to Azure with GitHub's **OIDC** token, a short-lived token
+GitHub issues to that run, which Azure trusts through a federated credential on an Entra ID app.
+The client, tenant, and subscription IDs are repository *variables*: they identify, they don't
+authenticate. The top-level token permission is `{}`, and jobs ask only for `contents: read` and
+`id-token: write`. Tests enforce all of this, plus SHA-pinned actions in every workflow.
+
+**Not done (needs Joshua):** creating the Entra ID app and federated credential, the state
+storage account, the `azure` environment and its reviewers, and setting the variables. All of
+those create or change cloud resources or repository settings.
