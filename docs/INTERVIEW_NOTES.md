@@ -155,3 +155,18 @@ Blast radius. Even with locked-down pods, untrusted code shares a kernel with wh
 the same node. A tainted sandbox pool keeps trusted services off those machines, and Kata gives
 each sandbox pod its own kernel. If the Kata runtime is missing, the sample fails closed as a
 harness error instead of running with weaker isolation.
+
+### 23. "Tell me about a bug your tests didn't catch."
+While checking the README's quickstart, `evalharness --help` crashed. argparse treats `%` in a
+help string as a format character, and one help string said "95% intervals". No test ran
+`--help`, so 130 passing tests never saw it. I escaped it (`95%%`), added a test that renders the
+help for the top level and every subcommand, and checked that the test fails without the fix.
+The lesson: documentation is a test plan; run what you tell people to run.
+
+### 24. "How would you decide what a first public evaluation measures?"
+I'd answer a narrow, descriptive question the tool is uniquely good at, not "which model is
+best". Here: how often each model's code passes a full hidden test suite in a locked-down
+sandbox, with intervals, and *how* it fails (wrong answer vs. crash vs. timeout vs. sandbox
+violation). I'd state the limits up front: the benchmark is likely contaminated and samples of
+one task are correlated. And I'd put the cost, license, and budget in a decision brief for the
+person who owns the money, rather than guessing.

@@ -4,9 +4,9 @@
 #              sandbox pod per sample (D20)
 # Neither runs model-generated code itself. That happens only in sandbox/Dockerfile (see D17).
 #
-# Build:  docker build --target service   -t evalharness-service:0.5.0 .
-#         docker build --target evaluator -t evalharness-evaluator:0.5.0 .
-# Run:    docker run --rm -p 127.0.0.1:8000:8000 -v evalharness-data:/data evalharness-service:0.5.0
+# Build:  docker build --target service   -t evalharness-service:0.6.0 .
+#         docker build --target evaluator -t evalharness-evaluator:0.6.0 .
+# Run:    docker run --rm -p 127.0.0.1:8000:8000 -v evalharness-data:/data evalharness-service:0.6.0
 
 # ---- build stage: resolve and install dependencies exactly as locked ----
 FROM python:3.12-slim@sha256:4840d514c583a4d3d8cad3940e68dee6f0f6f3635c12fcd0a3d74c21a5b93a54 AS build

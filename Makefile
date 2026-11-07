@@ -1,6 +1,6 @@
 # Convenience targets. Docker commands use your active context (`docker context show`).
 SANDBOX_IMAGE ?= evalharness-sandbox:0.2.0
-SERVICE_IMAGE ?= evalharness-service:0.5.0
+SERVICE_IMAGE ?= evalharness-service:0.6.0
 
 .PHONY: tf-check cluster-up cluster-down evaluator-image k8s-images deploy k8s-eval dashboard test-k8s install sandbox-image service-image images smoke ci lint lint-workflows format test test-unit test-gvisor validate demo
 
@@ -48,7 +48,7 @@ demo:               ## one end-to-end run with the mixed mock model
 
 # ---- Milestone 4: local Kubernetes (kind) ----
 CLUSTER ?= evalharness
-EVALUATOR_IMAGE ?= evalharness-evaluator:0.5.0
+EVALUATOR_IMAGE ?= evalharness-evaluator:0.6.0
 KCTX := --context kind-$(CLUSTER)
 
 cluster-up:         ## create the local kind cluster (no cloud resources)
