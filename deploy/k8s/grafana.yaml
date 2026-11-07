@@ -72,8 +72,9 @@ spec:
             readOnlyRootFilesystem: true
             capabilities: {drop: [ALL]}
           resources:
-            requests: {cpu: 50m, memory: 128Mi}
-            limits: {cpu: 500m, memory: 384Mi}
+            # Grafana 13 builds in-memory search indexes; 384Mi got it OOM-killed mid-session.
+            requests: {cpu: 50m, memory: 256Mi}
+            limits: {cpu: "1", memory: 1Gi}
           readinessProbe:
             httpGet: {path: /api/health, port: http}
             periodSeconds: 5
